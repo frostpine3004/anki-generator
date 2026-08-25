@@ -1,0 +1,7 @@
+.aider*
+.idea/
+*.apkg
+anki_decks/
+.env
+.DS_Store
+ROADMAP.md
