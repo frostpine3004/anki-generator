@@ -25,17 +25,69 @@ def scrape_url(url):
     paragraphs = soup.find_all('p')
     return ' '.join([p.get_text() for p in paragraphs])
 
-def extract_pdf(uploaded_file):
-    """Read an uploaded PDF and return its text, page by page."""
+def parse_page_range(text, total_pages):
+    """Turn '1, 5-8, 27-30' into a list of page indices. Ignores anything out of range."""
+    pages = set()
+
+    for part in text.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            start, end = part.split('-', 1)
+            for p in range(int(start), int(end) + 1):
+                if 1 <= p <= total_pages:
+                    pages.add(p - 1)
+        else:
+            p = int(part)
+            if 1 <= p <= total_pages:
+                pages.add(p - 1)
+
+    return sorted(pages)
+
+
+def extract_pdf(uploaded_file, page_range=None):
+    """Read an uploaded PDF and return its text. page_range is a string like '1, 5-8'."""
     reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+    total = len(reader.pages)
+
+    if page_range:
+        indices = parse_page_range(page_range, total)
+    else:
+        indices = range(total)
 
     pages = []
-    for page in reader.pages:
-        text = page.extract_text()
+    for i in indices:
+        text = reader.pages[i].extract_text()
         if text:
             pages.append(text)
 
     return ' '.join(pages)
+
+def extract_pdf_pages(uploaded_file, page_range=None):
+    """Like extract_pdf, but returns a list of (page_number, text) instead of one string."""
+    reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+    uploaded_file.seek(0)
+    total = len(reader.pages)
+
+    if page_range:
+        indices = parse_page_range(page_range, total)
+    else:
+        indices = range(total)
+
+    result = []
+    for i in indices:
+        text = reader.pages[i].extract_text()
+        if text:
+            result.append((i + 1, text))
+
+    return result
+
+def count_pdf_pages(uploaded_file):
+    """Return the number of pages in an uploaded PDF."""
+    reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+    uploaded_file.seek(0)
+    return len(reader.pages)
 
 def generate_cards(content, api_key, num_cards, difficulty):
     """Send content to OpenAI and return a list of (question, answer) pairs."""
