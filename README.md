@@ -6,7 +6,7 @@ An AI-powered tool that automatically generates Anki flashcards from multiple co
 - Webpage/Article URL — scrape any public webpage
 - YouTube Transcript — paste transcript to generate cards
 - Podcast RSS Feed — coming soon
-- PDF Upload — coming soon
+- PDF Upload — upload any PDF document
 - My Own Notes — paste any text
 
 ## How it works
