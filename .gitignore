@@ -5,3 +5,5 @@ anki_decks/
 .env
 .DS_Store
 ROADMAP.md
+test_scrape.py
+venv/

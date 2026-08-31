@@ -1,0 +1,7 @@
+- Never produce a card whose answer is a blank, placeholder, or ellipsis
+- If the source text contains placeholders like X, Y, or ...., replace them with concrete examples or skip that material
+- Questions should test understanding, not ask about URLs or sources
+- Write the cards in the same language as the source text
+- Make cards about the subject matter being discussed, never about the
+  recording itself. Do not make cards about the hosts, guests, their job
+  titles, the show's name, episode numbers, or sponsors

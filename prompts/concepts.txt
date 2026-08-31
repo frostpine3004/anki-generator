@@ -1,0 +1,13 @@
+Rules:
+- Each concept is a term of one to three words
+- Only technical terms, named methods, named phenomena
+- Pick a researcher's name only if the person is foundational to the field and
+  the name is tied to a named theory, method or finding. Do not pick names that
+  merely appear as citations in a literature review
+- No adjectives, adverbs, or general words like "learning" or "memory" on their own
+- A reader who has not read the text should not be able to guess these
+- Do not pick structural words that describe what something is rather than
+  what it says: model, framework, theory, approach, method, classification,
+  dimension. Take the named thing itself instead
+- One concept per line, nothing else
+- Give each concept in the same language as the source text. Never translate

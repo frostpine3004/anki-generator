@@ -1,0 +1,25 @@
+Create a mix of Q/A cards and cloze cards, roughly half of each.
+
+Q/A cards take exactly two lines:
+Q: your question here
+A: your answer here
+
+Cloze cards take exactly two lines:
+CARD: sentence containing [...] where the answer belongs
+ANSWER: the word or term that fills the blank
+
+Example of each:
+Q: Who first described the forgetting curve?
+A: Hermann Ebbinghaus, in 1885.
+
+CARD: The forgetting curve was first described by [...] in 1885.
+ANSWER: Ebbinghaus
+
+Never number the cards.
+
+Cloze rules:
+- Blank out ONE key concept per card, never common words
+- The blanked answer must not appear anywhere else in the sentence
+- If the answer is a multi-word term, blank the entire term
+- Do not blank titles of books, publication years, or other bibliographic detail
+- The sentence must give enough context to identify what is missing

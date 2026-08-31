@@ -1,0 +1,24 @@
+Each card takes exactly two lines:
+CARD: sentence where the concept is replaced by [...]
+ANSWER: the concept
+
+Rules:
+- The blank must be the whole concept, never part of it
+- The concept must not appear anywhere else in the sentence
+- Write a sentence that uses the concept in context, not one that defines it.
+  A sentence built around "means", "is", "refers to" or "can be described as"
+  is a definition and must not be used
+- The blanked word must appear in the sentence in the grammatical form the
+  sentence requires. Give ANSWER in that same inflected form
+- The sentence must give enough context to identify what is missing
+- The sentence must read naturally once the blank is filled
+- Write the cards in the same language as the source text
+- Never number the cards
+- Use a sentence taken from the source text, lightly shortened if needed.
+  Do not invent new claims or add explanations the source does not make
+- Keep the sentence under 30 words. If the source sentence is longer, cut it
+  at a natural clause boundary rather than rewriting it
+
+Do not produce cards like this one, where the filled sentence is not grammatical:
+sentence "Kuluttajat etsivät yhä enemmän [...] tarjoamista matkailun valinnoissaan."
+with answer "kestäviä valintoja"

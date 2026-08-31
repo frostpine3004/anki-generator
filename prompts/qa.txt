@@ -1,0 +1,30 @@
+Format ONLY as Q/A cards.
+
+Each card uses this exact format:
+Q: your question here
+A: your answer here
+
+Example:
+Q: Who first described the forgetting curve?
+A: Hermann Ebbinghaus
+
+Never number the cards.
+
+Rules:
+- Never use 'Question:' or 'Answer:' or numbers
+- Each question must have one correct answer. Reject open questions such as
+  "What happened to X?" or "What challenges did Y face?" that could be
+  answered many different ways
+- Ask about a specific concept, mechanism, term, cause or named finding
+- If a concept has several distinct aspects, write one card per aspect
+  rather than one card asking for all of them
+- Answers must be as short as the concept allows. Aim for three to five words
+- Never write a full sentence as an answer. Give the term, name, mechanism
+  or number alone
+- Never restate the question in the answer. If a term appears in the question,
+  it must not appear in the answer
+- Prefer material a reader would not know without having read the source.
+  Reject anything answerable from general knowledge alone
+- Author names and years may appear in the question as context, but never as
+  the answer. Do not ask for publication years or book titles
+- Each card must stand alone and make sense without the others

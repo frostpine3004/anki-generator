@@ -38,8 +38,33 @@ elif input_type == "YouTube Transcript":
     youtube_transcript = st.text_area("Paste YouTube transcript here", height=200)
 
 elif input_type == "Podcast RSS Feed":
-    url = st.text_input("Enter podcast RSS feed URL")
+    url = st.text_input(
+        "Enter podcast RSS feed URL",
+        placeholder="https://feeds.example.com/podcast.rss"
+    )
     st.caption("Find RSS feed by searching 'podcast name + RSS feed'")
+
+    if url and st.button("Load latest episode"):
+        with st.spinner("Fetching RSS feed..."):
+            transcript, info = flashcards.fetch_podcast_transcript(url)
+            if transcript:
+                st.session_state["podcast_content"] = transcript
+                st.session_state["podcast_info"] = info
+                st.success(f"Found: {info}")
+            else:
+                st.session_state["podcast_content"] = ""
+                st.warning(info)
+
+    if st.session_state.get("podcast_content"):
+        info = st.session_state.get("podcast_info", "")
+        st.caption(f"{info} — {len(st.session_state['podcast_content'])} characters")
+
+    st.text_area(
+        "Or paste transcript manually",
+        height=150,
+        key="podcast_manual",
+        placeholder="Paste transcript here if no transcript was found"
+    )
 
 elif input_type == "PDF Upload":
     pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
@@ -51,14 +76,14 @@ elif input_type == "PDF Upload":
         )
         st.caption("Counts from the file's first page, which may differ from printed page numbers. Leave empty for the whole document.")
 
-    if st.button("Preview extracted text"):
-        pages = flashcards.extract_pdf_pages(pdf_file, page_range)
-        total_chars = sum(len(text) for _, text in pages)
-        st.caption(f"{len(pages)} pages, {total_chars} characters")
+        if st.button("Preview extracted text"):
+            pages = flashcards.extract_pdf_pages(pdf_file, page_range)
+            total_chars = sum(len(text) for _, text in pages)
+            st.caption(f"{len(pages)} pages, {total_chars} characters")
 
-        for page_num, text in pages:
-            with st.expander(f"Page {page_num}"):
-                st.text(text)
+            for page_num, text in pages:
+                with st.expander(f"Page {page_num}"):
+                    st.text(text)
 
 elif input_type == "My Own Notes":
     own_notes = st.text_area("Paste your notes here", height=200)
@@ -68,8 +93,12 @@ num_cards = st.slider("Number of flashcards", min_value=3, max_value=20, value=5
 
 difficulty = st.selectbox("Difficulty level", ["Beginner", "Intermediate", "Advanced"])
 
-deck_name = st.text_input("Deck name", value="My AI Flashcards")
+card_type = st.selectbox(
+    "Card type",
+    ["Q/A cards", "Cloze cards", "Both"]
+)
 
+deck_name = st.text_input("Deck name", value="My AI Flashcards")
 
 if st.button("Generate Flashcards"):
     if not api_key:
@@ -89,11 +118,12 @@ if st.button("Generate Flashcards"):
                 st.stop()
             content = youtube_transcript
 
-        elif input_type == "My Own Notes":
-            if not own_notes:
-                st.error("Please paste your notes!")
+        elif input_type == "Podcast RSS Feed":
+            manual = st.session_state.get("podcast_manual", "")
+            content = manual or st.session_state.get("podcast_content", "")
+            if not content:
+                st.error("No transcript loaded. Click 'Load latest episode' or paste one manually.")
                 st.stop()
-            content = own_notes
 
         elif input_type == "PDF Upload":
             if not pdf_file:
@@ -101,8 +131,21 @@ if st.button("Generate Flashcards"):
                 st.stop()
             content = flashcards.extract_pdf(pdf_file, page_range)
 
+        elif input_type == "My Own Notes":
+            if not own_notes:
+                st.error("Please paste your notes!")
+                st.stop()
+            content = own_notes
+
     with st.spinner("Generating flashcards with AI..."):
-        cards = flashcards.generate_cards(content, api_key, num_cards, difficulty)
+        cards = flashcards.generate_cards(content, api_key, num_cards, difficulty, card_type)
+
+    with st.spinner("Checking card quality..."):
+        cards, rejected = flashcards.review_cards(cards, api_key, card_type)
+        cards = cards[:num_cards]
+              
+    if rejected:
+        st.caption(f"{rejected} cards rejected in review")
 
     if not cards:
         st.error("No flashcards could be generated. Try a different source.")
@@ -123,7 +166,6 @@ if st.button("Generate Flashcards"):
             file_name=filename,
             mime="application/octet-stream"
         )
-
 
 st.divider()
 st.subheader("Why flashcards instead of AI summaries?")
