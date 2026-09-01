@@ -12,13 +12,18 @@ Rules:
   sentence requires. Give ANSWER in that same inflected form
 - The sentence must give enough context to identify what is missing
 - The sentence must read naturally once the blank is filled
-- Write the cards in the same language as the source text
-- Never number the cards
+- Write every card in the language of the source text. If the source is in
+  English, the sentence and the answer must both be in English. Never translate
+  the source into another language
 - Use a sentence taken from the source text, lightly shortened if needed.
   Do not invent new claims or add explanations the source does not make
 - Keep the sentence under 30 words. If the source sentence is longer, cut it
   at a natural clause boundary rather than rewriting it
+- The sentence must work as written text. Reject anything that depends on the
+  spoken conversation around it: filler words, self-corrections, incomplete
+  clauses, or references to what someone just said. If a reader could not
+  understand the sentence without hearing the episode, do not use it
 
 Do not produce cards like this one, where the filled sentence is not grammatical:
-sentence "Kuluttajat etsivät yhä enemmän [...] tarjoamista matkailun valinnoissaan."
-with answer "kestäviä valintoja"
+sentence "Consumers increasingly seek [...] offering in their travel choices."
+with answer "sustainable options"

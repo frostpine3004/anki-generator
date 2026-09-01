@@ -44,16 +44,55 @@ elif input_type == "Podcast RSS Feed":
     )
     st.caption("Find RSS feed by searching 'podcast name + RSS feed'")
 
-    if url and st.button("Load latest episode"):
+    if url and st.button("Load episodes"):
         with st.spinner("Fetching RSS feed..."):
-            transcript, info = flashcards.fetch_podcast_transcript(url)
-            if transcript:
-                st.session_state["podcast_content"] = transcript
-                st.session_state["podcast_info"] = info
-                st.success(f"Found: {info}")
+            episodes, info = flashcards.fetch_episodes(url)
+            st.session_state["episodes"] = episodes
+            if episodes:
+                st.success(info)
             else:
-                st.session_state["podcast_content"] = ""
                 st.warning(info)
+
+    episodes = st.session_state.get("episodes", [])
+    if episodes:
+        titles = [e["title"] for e in episodes]
+        choice = st.selectbox("Choose an episode", titles)
+        episode = episodes[titles.index(choice)]
+
+        minutes = episode["duration"] / 60
+
+        col1, col2 = st.columns(2)
+        start_min = col1.number_input("Start at minute", min_value=0, value=0, step=5)
+        limit = col2.number_input("Minutes to transcribe (0 = to end)", min_value=0, value=0, step=5)
+
+        span = limit or minutes
+        if span:
+            cost = span * flashcards.WHISPER_COST_PER_MINUTE
+            st.caption(f"{span:.0f} minutes — costs about ${cost:.2f}")
+        else:
+            st.caption("Duration unknown — cost cannot be estimated in advance")
+
+        if st.button("Transcribe with Whisper"):
+            est = max(1, round(span / 7)) if span else 2
+            bar = st.progress(0.0, text=f"Downloading audio — about {est} min total")
+
+            def on_progress(i, total):
+                bar.progress((i + 1) / total, text=f"Transcribing part {i + 1} of {total}...")
+
+            try:
+                text = flashcards.transcribe_episode(
+                    episode["audio_url"], api_key,
+                    progress=on_progress,
+                    start_min=start_min,
+                    limit_min=limit,
+                )
+                bar.empty()
+                st.session_state["podcast_content"] = text
+                st.session_state["podcast_info"] = f"{episode['title']} (Whisper transcript)"
+                st.success(f"Transcribed {len(text)} characters")
+            except Exception as e:
+                bar.empty()
+                st.error(f"Transcription failed: {e}")
 
     if st.session_state.get("podcast_content"):
         info = st.session_state.get("podcast_info", "")
@@ -63,7 +102,7 @@ elif input_type == "Podcast RSS Feed":
         "Or paste transcript manually",
         height=150,
         key="podcast_manual",
-        placeholder="Paste transcript here if no transcript was found"
+        placeholder="Paste transcript here if you'd rather not transcribe"
     )
 
 elif input_type == "PDF Upload":

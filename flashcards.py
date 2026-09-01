@@ -7,6 +7,11 @@ import PyPDF2
 import io
 import os
 import feedparser
+import subprocess
+import tempfile
+
+WHISPER_COST_PER_MINUTE = 0.006
+WHISPER_MAX_BYTES = 25 * 1024 * 1024
 
 HEADERS = {
     'User-Agent': 'AnkiFlashcardGenerator/1.0 (https://github.com/frostpine3004/anki-generator)'
@@ -160,6 +165,120 @@ def fetch_podcast_transcript(rss_url):
         "You can paste the transcript manually below."
     )
 
+def parse_duration(value):
+    """Turn an iTunes duration ('3600' or '01:02:03') into seconds. 0 if unknown."""
+    value = str(value).strip()
+    if not value:
+        return 0
+    if ':' in value:
+        seconds = 0
+        for part in value.split(':'):
+            if not part.isdigit():
+                return 0
+            seconds = seconds * 60 + int(part)
+        return seconds
+    return int(value) if value.isdigit() else 0
+
+
+def fetch_episodes(rss_url, limit=10):
+    """Return recent episodes as a list of dicts with title, audio_url and duration."""
+    try:
+        resp = requests.get(rss_url, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        return [], f"Could not fetch the feed: {e}"
+
+    feed = feedparser.parse(resp.content)
+    if not feed.entries:
+        return [], "No episodes found in this RSS feed."
+
+    episodes = []
+    for entry in feed.entries[:limit]:
+        audio_url = None
+        for enc in entry.get("enclosures", []):
+            if "audio" in enc.get("type", ""):
+                audio_url = enc.get("href") or enc.get("url")
+                break
+        if not audio_url:
+            continue
+        episodes.append({
+            "title": entry.get("title", "Unknown episode"),
+            "audio_url": audio_url,
+            "duration": parse_duration(entry.get("itunes_duration", "")),
+        })
+
+    if not episodes:
+        return [], "No downloadable audio found in this feed."
+    return episodes, f"Found {len(episodes)} episodes."
+
+def trim_audio(path, out_dir, start_min=0, limit_min=0):
+    """Cut an audio file to a time range. Returns the new path."""
+    out = os.path.join(out_dir, "trimmed.mp3")
+    cmd = ["ffmpeg", "-i", path]
+    if start_min:
+        cmd += ["-ss", str(int(start_min * 60))]
+    if limit_min:
+        cmd += ["-t", str(int(limit_min * 60))]
+    cmd += ["-c", "copy", out]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg is required for trimming but is not installed.")
+
+    return out if os.path.exists(out) else path
+
+    
+def split_audio(path, out_dir, minutes=10):
+    """Split an audio file into chunks small enough for the Whisper API."""
+    if os.path.getsize(path) <= WHISPER_MAX_BYTES:
+        return [path]
+
+    pattern = os.path.join(out_dir, "part%03d.mp3")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", path, "-f", "segment",
+             "-segment_time", str(minutes * 60), "-c", "copy", pattern],
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg is required for episodes over 25 minutes but is not installed.")
+
+    parts = sorted(
+        os.path.join(out_dir, f)
+        for f in os.listdir(out_dir) if f.startswith("part")
+    )
+    return parts or [path]
+
+def transcribe_episode(audio_url, api_key, progress=None, start_min=0, limit_min=0):
+    """Download an episode and transcribe it with Whisper. Returns the full text."""
+    client = OpenAI(api_key=api_key)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "episode.mp3")
+        with requests.get(audio_url, headers=HEADERS, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                for block in r.iter_content(chunk_size=1 << 20):
+                    f.write(block)
+
+    if start_min or limit_min:
+            path = trim_audio(path, tmp, start_min, limit_min)
+
+        parts = split_audio(path, tmp)
+        parts = split_audio(path, tmp)
+
+        texts = []
+        for i, part in enumerate(parts):
+            if progress:
+                progress(i, len(parts))
+            with open(part, "rb") as f:
+                result = client.audio.transcriptions.create(model="whisper-1", file=f)
+            texts.append(result.text)
+
+    return " ".join(texts)
+
 def load_prompt(name):
     """Read a prompt file from the prompts folder."""
     path = os.path.join(os.path.dirname(__file__), "prompts", f"{name}.txt")
@@ -277,12 +396,15 @@ def parse_cards(text):
 
 def answer_leaks(sentence, answer):
     """True if the answer, or a significant word from it, appears in the sentence."""
-    sentence_lower = sentence.lower()
+    words_in_sentence = sentence.lower().split()
     for word in answer.lower().split():
-        if len(word) > 3 and word in sentence_lower:
-            return True
+        if len(word) < 4:
+            continue
+        stem = word[:4]
+        for other in words_in_sentence:
+            if other.startswith(stem):
+                return True
     return False
-
 
 def review_cards(cards, api_key, card_type="Q/A cards"):
     """Ask the model to check its own cards and drop the weak ones."""
