@@ -313,7 +313,6 @@ errors; a reader catches them at a glance.
 **Non-determinism.** The same prompt gives different output each run. A rule
 that works on three cards may fail on the fourth. Judging a change needs a
 metric set in advance and enough repetitions to separate effect from variance.
-Most of my comparisons were single runs, which is not enough.
 
 **Source quality dominates.** The same code produced usable cards from a
 Wikipedia article and unusable ones from a literature review. When output is
