@@ -3,9 +3,7 @@
 Why the tool is built the way it is. For what it does and how to run it, see
 the [README](README.md).
 
-This started as a course project and stayed one. It works, but it has not been
-used by anyone except me, and several decisions below would need revisiting
-before it was.
+This project is a course work for the Building AI course / University of Helsinki.
 
 ---
 
