@@ -9,5 +9,10 @@ Rules:
 - Do not pick structural words that describe what something is rather than
   what it says: model, framework, theory, approach, method, classification,
   dimension. Take the named thing itself instead
+- Do not pick the main topic of the text, or any compound or variant of it.
+  If the text is about money laundering, do not pick "money laundering" or
+  "anti-money laundering directive". The main topic appears in nearly every
+  sentence, so it cannot be blanked out
+- Do not pick two concepts that share the same word or word stem
 - One concept per line, nothing else
 - Give each concept in the same language as the source text. Never translate

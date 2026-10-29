@@ -8,7 +8,7 @@ st.set_page_config(
 )
 
 st.title("AI Flashcard Generator")
-st.subheader("Turn any webpage into Anki flashcards")
+st.subheader("Turn webpages, PDFs, podcasts and notes into Anki flashcards")
 
 st.info("Your API key is never stored. It's only used for your current session.")
 
@@ -43,6 +43,16 @@ elif input_type == "Podcast RSS Feed":
         placeholder="https://feeds.example.com/podcast.rss"
     )
     st.caption("Find RSS feed by searching 'podcast name + RSS feed'")
+
+    if url and st.button("Check for a published transcript (latest episode)"):
+        with st.spinner("Looking for a transcript..."):
+            text, info = flashcards.fetch_podcast_transcript(url)
+            if text:
+                st.session_state["podcast_content"] = text
+                st.session_state["podcast_info"] = info
+                st.success(f"Transcript found: {info}")
+            else:
+                st.warning(info)
 
     if url and st.button("Load episodes"):
         with st.spinner("Fetching RSS feed..."):
@@ -137,7 +147,17 @@ card_type = st.selectbox(
     ["Q/A cards", "Cloze cards", "Both"]
 )
 
+concept = st.text_input(
+    "Narrow down to a topic (optional)",
+    placeholder="mitochondria, cellular respiration"
+)
+st.caption("Separate alternatives with commas. Leave empty to use the whole source.")
+
+context = st.slider("Paragraphs to include around each match", 0, 2, 1)
+
 deck_name = st.text_input("Deck name", value="My AI Flashcards")
+
+show_debug = st.checkbox("Show debug info")
 
 if st.button("Generate Flashcards"):
     if not api_key:
@@ -161,7 +181,7 @@ if st.button("Generate Flashcards"):
             manual = st.session_state.get("podcast_manual", "")
             content = manual or st.session_state.get("podcast_content", "")
             if not content:
-                st.error("No transcript loaded. Click 'Load latest episode' or paste one manually.")
+                st.error("No transcript loaded. Check for a published transcript, transcribe an episode with Whisper, or paste one manually.")
                 st.stop()
 
         elif input_type == "PDF Upload":
@@ -176,15 +196,24 @@ if st.button("Generate Flashcards"):
                 st.stop()
             content = own_notes
 
-    with st.spinner("Generating flashcards with AI..."):
-        cards = flashcards.generate_cards(content, api_key, num_cards, difficulty, card_type)
+    if concept:
+        content, matched, total = flashcards.filter_by_concept(content, concept, context=context)
+        if not matched:
+            st.error("No paragraphs matched that topic. Try other words or leave the field empty.")
+            st.stop()
+        st.caption(f"Topic filter kept {matched} of {total} paragraphs")
 
-    with st.spinner("Checking card quality..."):
-        cards, rejected = flashcards.review_cards(cards, api_key, card_type)
-        cards = cards[:num_cards]
-              
+    flashcards.debug_log.clear()
+    with st.spinner("Generating and checking flashcards with AI..."):
+        cards, rejected = flashcards.generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type)
+
     if rejected:
         st.caption(f"{rejected} cards rejected in review")
+
+    if show_debug:
+        with st.expander("Debug: what happened at each step"):
+            for step, text in flashcards.debug_log:
+                st.text(f"[{step}] {text}")
 
     if not cards:
         st.error("No flashcards could be generated. Try a different source.")
@@ -194,8 +223,9 @@ if st.button("Generate Flashcards"):
 
     for i, (question, answer) in enumerate(cards, 1):
         with st.expander(f"Flashcard {i}: {question[:50]}..."):
-            st.write(f"**Question:** {question}")
-            st.write(f"**Answer:** {answer}")
+            # Escape $ so Streamlit doesn't render "$200 billion ... $6 billion" as a formula
+            st.write("**Question:** " + question.replace("$", "\\$"))
+            st.write("**Answer:** " + answer.replace("$", "\\$"))
 
     filename = flashcards.build_deck(cards, deck_name)
     with open(filename, "rb") as f:
@@ -211,32 +241,53 @@ st.subheader("Why flashcards instead of AI summaries?")
 
 with st.expander("Read the case for this tool"):
     st.markdown("""
-**A summary is something you read. A flashcard is something you answer.**
+**An Anki deck generator that costs a few cents, not a subscription.**
 
-Karpicke and Roediger ran a study in Science in 2008 comparing the two. Students
-who tested themselves on material remembered far more of it weeks later than
-students who reread it. Rereading felt more productive at the time, which is why
-people keep doing it. A 2006 review by Cepeda and colleagues found the same
-pattern for spacing: review spread over several days beat one long session.
-Anki's scheduler is built around that finding.
+Most card generators charge monthly or as a one-time purchase whether you use
+them or not. This one asks for your own OpenAI key and adds nothing on top.
+Cards from an article cost around a cent. Transcribing a ten-minute podcast
+costs about six cents.
 
-The problem with AI summaries is not that they are bad summaries. It's that
-reading is not retrieval.
+**You see the price before you press the button**
 
-That's what this tool is for.
+Transcription is the only step that costs real money, so the cost is shown up
+front. You can also narrow the input: pick which pages of a PDF to use, or which
+minutes of an episode to transcribe. Nothing runs up a bill in the background.
+
+**Podcasts, not just documents**
+
+Checks a podcast's RSS feed for a published transcript of the latest episode,
+and transcribes any episode with Whisper when the show hasn't published one. Most tools in this space handle PDFs and web
+pages; few handle audio.
+
+**No account, no server in the middle**
+
+Nothing is stored here. Your key and whatever you paste in are used once and
+discarded. Content does go to OpenAI's API, as it does with any tool like this.
+It isn't used for training, and OpenAI keeps it 30 days for abuse monitoring.
+No second company holds a copy.
+
+**YouTube transcripts are pasted, not scraped**
+
+Automated access would breach YouTube's terms, so this tool asks you to copy the
+transcript yourself. One extra step, and the decision about what to fetch stays
+with you.
 
 **Direct Anki export**
-Produces a .apkg file that imports straight into your existing decks. NotebookLM
-and similar tools won't do this. Your scheduler and settings stay as they are;
-card writing is the only step this takes over.
 
-**Re-runnable as you improve**
-Regenerate the same source at greater depth once the early cards feel obvious.
-Generation is cheap enough that a deck is never a one-time commitment.
+Produces a .apkg file that imports into your existing decks. Your scheduler and
+settings stay as they are; card writing is the only step this takes over.
 
-**Nothing is stored**
-Your API key and whatever you paste in are used once and discarded.
+**Why testing yourself beats rereading**
+
+Karpicke and Roediger compared the two in Science in 2008. Students who tested
+themselves remembered far more weeks later than students who reread the
+material. Rereading felt more productive at the time, which is why people keep
+doing it. Cepeda and colleagues found the same pattern for timing in 2006:
+review spread across several days beat one long session. Anki's scheduler is
+built on both findings. This tool writes the cards; Anki does the rest.
 
 **Open source**
+
 All the code is on GitHub if you want to check any of that.
-    """)
+""")

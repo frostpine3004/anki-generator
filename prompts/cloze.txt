@@ -1,29 +1,36 @@
-Each card takes exactly two lines:
-CARD: sentence where the concept is replaced by [...]
-ANSWER: the concept
-
 Rules:
-- The blank must be the whole concept, never part of it
-- The concept must not appear anywhere else in the sentence
-- Write a sentence that uses the concept in context, not one that defines it.
-  A sentence built around "means", "is", "refers to" or "can be described as"
-  is a definition and must not be used
-- The blanked word must appear in the sentence in the grammatical form the
-  sentence requires. Give ANSWER in that same inflected form
-- The sentence must give enough context to identify what is missing
-- The sentence must read naturally once the blank is filled
-- Write every card in the language of the source text. If the source is in
-  English, the sentence and the answer must both be in English. Never translate
-  the source into another language
-- Use a sentence taken from the source text, lightly shortened if needed.
-  Do not invent new claims or add explanations the source does not make
-- Keep the sentence under 30 words. If the source sentence is longer, cut it
-  at a natural clause boundary rather than rewriting it
-- The sentence must work as written text. Reject anything that depends on the
-  spoken conversation around it: filler words, self-corrections, incomplete
-  clauses, or references to what someone just said. If a reader could not
-  understand the sentence without hearing the episode, do not use it
+- The sentence must use the concept in context, not define it. A sentence built
+  around "means", "is", "refers to", "is called" or "is known as" is a
+  definition and must not be chosen
+- The sentence must point to this one concept only. It must say something
+  characteristic of the concept, such as how it works, what it is used for or
+  what makes it different, so that someone who knows the subject can name it.
+  Reject a sentence that other terms from the same field would fill equally
+  well, for example one that only gives a statistic, a date or an estimate:
+  "Finextra estimated that [...] accounted for over $200 billion in the US in
+  2017" fits almost any financial crime
+- The concept must not be one of several examples listed together, so that
+  another item from the same list would fill the blank equally well
+- The sentence must make sense on its own. Do not choose a sentence that starts
+  with "He", "She", "It", "This", "These", "Additionally" or "However", or that
+  only makes sense after the previous sentence. This includes sentences that
+  point back with words such as "these sites", "those funds" or "this method"
+- The sentence must work as written text. Do not choose anything that depends
+  on spoken conversation around it: filler words, self-corrections, incomplete
+  clauses, or references to what someone just said
 
-Do not produce cards like this one, where the filled sentence is not grammatical:
-sentence "Consumers increasingly seek [...] offering in their travel choices."
-with answer "sustainable options"
+Cutting long sentences:
+- A card may be at most 30 words. If the sentence is longer, or if only part of
+  it is about the concept, cut out the continuous part around [...] that makes
+  sense on its own
+- Cut at a natural boundary: a full clause, not in the middle of a phrase.
+  Keep a preposition or article that belongs to [...]: "with [...] laws, money
+  can be confiscated", not "[...] laws, money can be confiscated".
+  A cut may start in the middle of the sentence, for example after "while",
+  "but", "and" or a comma, if what follows is a complete statement
+- Copy the part word for word. Do not change, add, reorder or leave out any
+  words inside it. Keep [...] exactly as it is
+- Leave out a starting word such as "Additionally", "However" or "while" when
+  the rest is a complete statement without it
+- The part must still give enough context to identify what is missing. Prefer
+  the whole sentence when it is short enough
