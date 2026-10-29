@@ -3,6 +3,9 @@
 *.apkg
 anki_decks/
 .env
+.env.*
+__pycache__/
+*.pyc
 .DS_Store
 ROADMAP.md
 test_scrape.py
