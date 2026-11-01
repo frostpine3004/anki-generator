@@ -13,12 +13,23 @@ import tempfile
 import json
 import xml.etree.ElementTree as ET
 from collections import Counter
+from contextvars import ContextVar
 
-# Steps of the last generation run, shown in the app when debugging is on
-debug_log = []
+# Steps of the current generation run, shown in the app when debugging is on.
+# Streamlit runs each user's session in its own thread, and a ContextVar holds a
+# separate value per thread, so two people generating at once never share a log.
+_debug_log = ContextVar("debug_log", default=None)
+
+def new_debug_log():
+    """Start an empty log for this run and return it."""
+    log = []
+    _debug_log.set(log)
+    return log
 
 def debug(step, text):
-    debug_log.append((step, text))
+    log = _debug_log.get()
+    if log is not None:
+        log.append((step, text))
 
 WHISPER_COST_PER_MINUTE = 0.006
 WHISPER_MAX_BYTES = 25 * 1024 * 1024
@@ -987,7 +998,11 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
 
 
 def build_deck(flashcards, deck_name):
-    """Build an Anki deck, write it to a .apkg file, and return the filename."""
+    """Build an Anki deck and return the .apkg file's contents as bytes.
+
+    The deck is built in memory instead of saved under its name in the app folder:
+    two users who kept the default name would overwrite and download each other's file.
+    """
     model_id = random.randrange(1 << 30, 1 << 31)
     model = genanki.Model(
         model_id,
@@ -1006,6 +1021,6 @@ def build_deck(flashcards, deck_name):
     for question, answer in flashcards:
         deck.add_note(genanki.Note(model=model, fields=[question, answer]))
 
-    filename = f"{deck_name}.apkg"
-    genanki.Package(deck).write_to_file(filename)
-    return filename
+    buffer = io.BytesIO()
+    genanki.Package(deck).write_to_file(buffer)
+    return buffer.getvalue()

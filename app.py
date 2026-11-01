@@ -216,7 +216,7 @@ if st.button("Generate Flashcards"):
             st.stop()
         st.caption(f"Topic filter kept {matched} of {total} paragraphs")
 
-    flashcards.debug_log.clear()
+    debug_log = flashcards.new_debug_log()
     with st.spinner("Generating and checking flashcards with AI..."):
         cards, rejected = flashcards.generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type)
 
@@ -225,7 +225,7 @@ if st.button("Generate Flashcards"):
 
     if show_debug:
         with st.expander("Debug: what happened at each step"):
-            for step, text in flashcards.debug_log:
+            for step, text in debug_log:
                 st.text(f"[{step}] {text}")
 
     if not cards:
@@ -240,14 +240,12 @@ if st.button("Generate Flashcards"):
             st.write("**Question:** " + question.replace("$", "\\$"))
             st.write("**Answer:** " + answer.replace("$", "\\$"))
 
-    filename = flashcards.build_deck(cards, deck_name)
-    with open(filename, "rb") as f:
-        st.download_button(
-            label="Download Anki Deck",
-            data=f,
-            file_name=filename,
-            mime="application/octet-stream"
-        )
+    st.download_button(
+        label="Download Anki Deck",
+        data=flashcards.build_deck(cards, deck_name),
+        file_name=f"{deck_name}.apkg",
+        mime="application/octet-stream"
+    )
 
 st.divider()
 st.subheader("Why flashcards instead of AI summaries?")
