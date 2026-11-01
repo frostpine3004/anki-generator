@@ -23,7 +23,7 @@ Run the Streamlit app, enter your own OpenAI API key and choose a source:
 
 * **Webpage/Article URL**: the page is fetched and its paragraphs are extracted
 * **YouTube Transcript**: paste the transcript from YouTube's own "Show transcript" view
-* **Podcast RSS Feed**: check the feed for a published transcript of the latest episode, or pick an episode and transcribe it with Whisper. You can choose a time range, and the cost is shown before you start.
+* **Podcast RSS Feed**: pick an episode. If the show publishes a transcript for it, that is used for free; otherwise Whisper transcribes the audio. You can choose a time range, and the cost is shown before you start.
 * **PDF Upload**: choose a page range (e.g. `1, 5-8, 27-30`) and preview the extracted text
 * **My Own Notes**: paste any text
 

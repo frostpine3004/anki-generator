@@ -10,6 +10,8 @@ import os
 import feedparser
 import subprocess
 import tempfile
+import json
+import xml.etree.ElementTree as ET
 from collections import Counter
 
 # Steps of the last generation run, shown in the app when debugging is on
@@ -159,60 +161,93 @@ def count_pdf_pages(uploaded_file):
     uploaded_file.seek(0)
     return len(reader.pages)
 
-def fetch_podcast_transcript(rss_url):
-    """Fetch RSS feed, find the latest episode, and return its transcript if available.
+def transcript_to_text(raw, content_type):
+    """Turn a published transcript into plain text.
 
-    Returns (transcript_text, info_string). transcript_text is None if nothing was found.
+    Podcasts publish transcripts as web pages, JSON or subtitle files (VTT, SRT).
+    A subtitle file puts a timestamp before every line, which would end up in the cards.
+    """
+    if "html" in content_type:
+        return BeautifulSoup(raw, "html.parser").get_text(separator=" ")
+    if "json" in content_type:
+        try:
+            return " ".join(s.get("body", "") for s in json.loads(raw).get("segments", []))
+        except (ValueError, AttributeError):
+            return raw
+    if "-->" in raw:
+        raw = re.sub(r"^WEBVTT.*$", "", raw, flags=re.MULTILINE)
+        # SRT numbers each line, as in "12", and both formats time it, as in "00:00:04.450 --> 00:00:05.520"
+        raw = re.sub(r"^\d+\s*$", "", raw, flags=re.MULTILINE)
+        raw = re.sub(r"^[\d:.,]+\s*-->.*$", "", raw, flags=re.MULTILINE)
+        # Speaker tags such as <v Sam>
+        raw = re.sub(r"<[^>]+>", "", raw)
+    return raw
+
+# An episode can list one transcript per format. Earlier formats need less cleaning.
+TRANSCRIPT_TYPES = ["text/html", "text/plain", "text/vtt", "application/srt", "application/json"]
+
+def feed_transcripts(feed_bytes):
+    """List the podcast:transcript tags of every episode, in feed order.
+
+    feedparser keeps only one transcript tag per episode, so the feed's XML is read here.
+    Each episode gets a list of (url, type) pairs. None if the XML can't be read.
     """
     try:
-        resp = requests.get(rss_url, headers=HEADERS, timeout=10)
-        resp.raise_for_status()
-    except Exception as e:
-        return None, f"Could not fetch the feed: {e}"
+        root = ET.fromstring(feed_bytes)
+    except ET.ParseError:
+        return None
+    episodes = []
+    for item in root.iter("item"):
+        tags = []
+        for child in item:
+            if child.tag.endswith("}transcript") and child.get("url"):
+                kind = (child.get("type") or "").split(";")[0].strip().lower()
+                tags.append((child.get("url"), kind))
+        episodes.append(tags)
+    return episodes
 
-    feed = feedparser.parse(resp.content)
+def pick_transcript(tags):
+    """Choose the transcript in the format that comes first in TRANSCRIPT_TYPES."""
+    if not tags:
+        return None, None
+    def rank(tag):
+        kind = tag[1]
+        return TRANSCRIPT_TYPES.index(kind) if kind in TRANSCRIPT_TYPES else len(TRANSCRIPT_TYPES)
+    return min(tags, key=rank)
 
-    if not feed.entries:
-        return None, "No episodes found in this RSS feed."
-
-    latest = feed.entries[0]
-    title = latest.get("title", "Unknown episode")
-
+def find_transcript_url(entry):
+    """Return the link to an episode's published transcript, or None."""
     transcript_url = None
-    if hasattr(latest, "podcast_transcript"):
-        transcript_url = latest.podcast_transcript.get("url")
+    if hasattr(entry, "podcast_transcript"):
+        transcript_url = entry.podcast_transcript.get("url")
 
-    for tag in latest.get("tags", []):
+    for tag in entry.get("tags", []):
         if "transcript" in tag.get("term", "").lower():
             candidate = tag.get("scheme")
             if candidate and candidate.startswith("http"):
                 transcript_url = candidate
                 break
 
-    if transcript_url:
-        try:
-            resp = requests.get(transcript_url, headers=HEADERS, timeout=10)
-            if resp.ok:
-                if "html" in resp.headers.get("content-type", ""):
-                    text = BeautifulSoup(resp.text, "html.parser").get_text(separator=" ")
-                else:
-                    text = resp.text
-                text = " ".join(text.split())
-                if len(text) > 200:
-                    return text, title
-        except Exception:
-            pass
+    return transcript_url
 
-    summary = latest.get("summary", "")
-    if summary and len(summary) > 2000:
-        clean = BeautifulSoup(summary, "html.parser").get_text(separator=" ").strip()
-        return clean, f"{title} (show notes only — no transcript found)"
+def fetch_transcript(transcript_url, transcript_type=None):
+    """Download a published transcript as plain text. None if it can't be used.
 
-    return None, (
-        f"No transcript found for '{title}'. "
-        "About 30–40% of podcasts publish transcripts. "
-        "You can paste the transcript manually below."
-    )
+    transcript_type is the format the feed declares. Servers often send subtitle and
+    JSON files as plain text or as a generic file, so the declared format wins.
+    """
+    if not transcript_url:
+        return None
+    try:
+        resp = requests.get(transcript_url, headers=HEADERS, timeout=10)
+        if not resp.ok:
+            return None
+    except Exception:
+        return None
+    content_type = transcript_type or resp.headers.get("content-type", "")
+    text = transcript_to_text(resp.text, content_type)
+    text = " ".join(text.split())
+    return text if len(text) > 200 else None
 
 def parse_duration(value):
     """Turn an iTunes duration ('3600' or '01:02:03') into seconds. 0 if unknown."""
@@ -230,7 +265,8 @@ def parse_duration(value):
 
 
 def fetch_episodes(rss_url, limit=10):
-    """Return recent episodes as a list of dicts with title, audio_url and duration."""
+    """Return recent episodes as a list of dicts with title, audio_url, duration,
+    transcript_url and transcript_type."""
     try:
         resp = requests.get(rss_url, headers=HEADERS, timeout=10)
         resp.raise_for_status()
@@ -241,8 +277,13 @@ def fetch_episodes(rss_url, limit=10):
     if not feed.entries:
         return [], "No episodes found in this RSS feed."
 
+    # Trust the XML reading only if it found the same episodes feedparser did
+    transcripts = feed_transcripts(resp.content)
+    if transcripts is not None and len(transcripts) != len(feed.entries):
+        transcripts = None
+
     episodes = []
-    for entry in feed.entries[:limit]:
+    for i, entry in enumerate(feed.entries[:limit]):
         audio_url = None
         for enc in entry.get("enclosures", []):
             if "audio" in enc.get("type", ""):
@@ -250,10 +291,15 @@ def fetch_episodes(rss_url, limit=10):
                 break
         if not audio_url:
             continue
+        transcript_url, transcript_type = pick_transcript(transcripts[i]) if transcripts else (None, None)
+        if not transcript_url:
+            transcript_url = find_transcript_url(entry)
         episodes.append({
             "title": entry.get("title", "Unknown episode"),
             "audio_url": audio_url,
             "duration": parse_duration(entry.get("itunes_duration", "")),
+            "transcript_url": transcript_url,
+            "transcript_type": transcript_type,
         })
 
     if not episodes:

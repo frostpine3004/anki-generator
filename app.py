@@ -1,6 +1,22 @@
 import streamlit as st
 import flashcards
 
+
+# Streamlit reruns the whole script on every click, so the feed and transcript
+# are cached instead of being downloaded again each time.
+# A failed feed raises, and Streamlit doesn't cache errors, so the next run retries.
+@st.cache_data(ttl=600, show_spinner=False)
+def load_episodes(feed_url):
+    episodes, info = flashcards.fetch_episodes(feed_url)
+    if not episodes:
+        raise ValueError(info)
+    return episodes
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_transcript(transcript_url, transcript_type):
+    return flashcards.fetch_transcript(transcript_url, transcript_type)
+
 # Page config
 st.set_page_config(
     page_title="AI Flashcard Generator",
@@ -28,6 +44,7 @@ youtube_transcript = None
 own_notes = None
 pdf_file = None
 page_range = None
+podcast_content = None
 
 if input_type == "Webpage/Article URL":
     url = st.text_input("Enter webpage URL", placeholder="https://en.wikipedia.org/wiki/...")
@@ -44,76 +61,73 @@ elif input_type == "Podcast RSS Feed":
     )
     st.caption("Find RSS feed by searching 'podcast name + RSS feed'")
 
-    if url and st.button("Check for a published transcript (latest episode)"):
-        with st.spinner("Looking for a transcript..."):
-            text, info = flashcards.fetch_podcast_transcript(url)
-            if text:
-                st.session_state["podcast_content"] = text
-                st.session_state["podcast_info"] = info
-                st.success(f"Transcript found: {info}")
-            else:
-                st.warning(info)
-
-    if url and st.button("Load episodes"):
+    episodes = []
+    if url:
         with st.spinner("Fetching RSS feed..."):
-            episodes, info = flashcards.fetch_episodes(url)
-            st.session_state["episodes"] = episodes
-            if episodes:
-                st.success(info)
-            else:
-                st.warning(info)
+            try:
+                episodes = load_episodes(url)
+            except ValueError as e:
+                st.warning(str(e))
 
-    episodes = st.session_state.get("episodes", [])
     if episodes:
         titles = [e["title"] for e in episodes]
         choice = st.selectbox("Choose an episode", titles)
         episode = episodes[titles.index(choice)]
 
-        minutes = episode["duration"] / 60
+        with st.spinner("Looking for a published transcript..."):
+            published = load_transcript(episode["transcript_url"], episode["transcript_type"])
 
-        col1, col2 = st.columns(2)
-        start_min = col1.number_input("Start at minute", min_value=0, value=0, step=5)
-        limit = col2.number_input("Minutes to transcribe (0 = to end)", min_value=0, value=0, step=5)
-
-        span = limit or minutes
-        if span:
-            cost = span * flashcards.WHISPER_COST_PER_MINUTE
-            st.caption(f"{span:.0f} minutes — costs about ${cost:.2f}")
+        if published:
+            podcast_content = published
+            st.success(f"Published transcript found — free to use ({len(published)} characters)")
         else:
-            st.caption("Duration unknown — cost cannot be estimated in advance")
+            if episode["transcript_url"]:
+                st.info("The feed lists a transcript for this episode, but it couldn't be read. Whisper can transcribe the audio instead.")
+            else:
+                st.info("No published transcript for this episode. Whisper can transcribe the audio.")
 
-        if st.button("Transcribe with Whisper"):
-            est = max(1, round(span / 7)) if span else 2
-            bar = st.progress(0.0, text=f"Downloading audio — about {est} min total")
+            minutes = episode["duration"] / 60
 
-            def on_progress(i, total):
-                bar.progress((i + 1) / total, text=f"Transcribing part {i + 1} of {total}...")
+            col1, col2 = st.columns(2)
+            start_min = col1.number_input("Start at minute", min_value=0, value=0, step=5)
+            limit = col2.number_input("Minutes to transcribe (0 = to end)", min_value=0, value=0, step=5)
 
-            try:
-                text = flashcards.transcribe_episode(
-                    episode["audio_url"], api_key,
-                    progress=on_progress,
-                    start_min=start_min,
-                    limit_min=limit,
-                )
+            span = limit or minutes
+            if span:
+                cost = span * flashcards.WHISPER_COST_PER_MINUTE
+                label = f"Transcribe {span:.0f} minutes with Whisper (about ${cost:.2f})"
+            else:
+                label = "Transcribe with Whisper"
+                st.caption("Duration unknown — cost cannot be estimated in advance")
+
+            # Keep each transcript with the episode and range it came from,
+            # so switching episodes never sends an old transcript to the card step.
+            transcripts = st.session_state.setdefault("whisper_transcripts", {})
+            key = (episode["audio_url"], start_min, limit)
+            podcast_content = transcripts.get(key)
+
+            if podcast_content:
+                st.success(f"Transcribed {len(podcast_content)} characters")
+            elif st.button(label):
+                est = max(1, round(span / 7)) if span else 2
+                bar = st.progress(0.0, text=f"Downloading audio — about {est} min total")
+
+                def on_progress(i, total):
+                    bar.progress((i + 1) / total, text=f"Transcribing part {i + 1} of {total}...")
+
+                try:
+                    transcripts[key] = flashcards.transcribe_episode(
+                        episode["audio_url"], api_key,
+                        progress=on_progress,
+                        start_min=start_min,
+                        limit_min=limit,
+                    )
+                except Exception as e:
+                    st.error(f"Transcription failed: {e}")
                 bar.empty()
-                st.session_state["podcast_content"] = text
-                st.session_state["podcast_info"] = f"{episode['title']} (Whisper transcript)"
-                st.success(f"Transcribed {len(text)} characters")
-            except Exception as e:
-                bar.empty()
-                st.error(f"Transcription failed: {e}")
-
-    if st.session_state.get("podcast_content"):
-        info = st.session_state.get("podcast_info", "")
-        st.caption(f"{info} — {len(st.session_state['podcast_content'])} characters")
-
-    st.text_area(
-        "Or paste transcript manually",
-        height=150,
-        key="podcast_manual",
-        placeholder="Paste transcript here if you'd rather not transcribe"
-    )
+                if key in transcripts:
+                    # Redraw so the button is replaced by the "Transcribed" message
+                    st.rerun()
 
 elif input_type == "PDF Upload":
     pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
@@ -178,10 +192,9 @@ if st.button("Generate Flashcards"):
             content = youtube_transcript
 
         elif input_type == "Podcast RSS Feed":
-            manual = st.session_state.get("podcast_manual", "")
-            content = manual or st.session_state.get("podcast_content", "")
+            content = podcast_content
             if not content:
-                st.error("No transcript loaded. Check for a published transcript, transcribe an episode with Whisper, or paste one manually.")
+                st.error("No transcript yet. Pick an episode, and if it has no published transcript, transcribe it with Whisper first.")
                 st.stop()
 
         elif input_type == "PDF Upload":
@@ -256,9 +269,9 @@ minutes of an episode to transcribe. Nothing runs up a bill in the background.
 
 **Podcasts, not just documents**
 
-Checks a podcast's RSS feed for a published transcript of the latest episode,
-and transcribes any episode with Whisper when the show hasn't published one. Most tools in this space handle PDFs and web
-pages; few handle audio.
+Pick an episode from a podcast's RSS feed. If the show publishes a transcript,
+it's used for free; if not, Whisper transcribes the audio. Most tools in this
+space handle PDFs and web pages; few handle audio.
 
 **No account, no server in the middle**
 
