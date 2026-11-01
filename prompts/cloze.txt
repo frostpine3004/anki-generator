@@ -15,6 +15,9 @@ Rules:
   with "He", "She", "It", "This", "These", "Additionally" or "However", or that
   only makes sense after the previous sentence. This includes sentences that
   point back with words such as "these sites", "those funds" or "this method"
+- The sentence must be complete, with a main verb. Lists in the source contain
+  items that are not sentences, such as "Online job marketplaces such as
+  Fiverr, which accept funds from clients and hold them for freelancers."
 - The sentence must work as written text. Do not choose anything that depends
   on spoken conversation around it: filler words, self-corrections, incomplete
   clauses, or references to what someone just said

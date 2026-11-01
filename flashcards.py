@@ -384,6 +384,8 @@ def source_sentences(text):
     after the full stop, as in "signatures).[54] While", which hides the break.
     """
     text = re.sub(r"\[(?:\d+|[a-z]|note \d+|citation needed)\]", "", text, flags=re.IGNORECASE)
+    # A compound broken at the end of a PDF line, as in "anti-\nmoney", would become "anti- money"
+    text = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1-\2", text)
     # PDFs sometimes run a heading into the previous sentence, as in "legislation.Digital".
     # An abbreviation such as "U.S." or "i.e." doesn't end a sentence.
     parts = re.split(r"(?<=[.!?])(?<!\.\w\.)\s+|(?<=[a-z][.!?])(?=[A-Z])|\n\s*\n", text)
@@ -489,6 +491,10 @@ def usable_sentence(sentence, span):
     # A title from the reference list, as in '"The Rise in Popularity of Cryptocurrencies".'
     if re.match(r"^[\"“].*[\"”]\.?$", sentence):
         return False
+    # A statistic such as "US$14 billion in [...]" or "2–5% of the economy" fits other
+    # concepts equally well. A threshold such as "$10,000" is kept.
+    if re.search(r"\d\s*(%|percent\b|per cent\b|prosent|(b|m|tr)illion\b|bn\b|miljard|miljoon)", sentence, re.IGNORECASE):
+        return False
     rest = sentence[:span[0]] + sentence[span[1]:]
     if len(re.findall(r"\w+", rest)) < 6:
         return False
@@ -498,12 +504,13 @@ def usable_sentence(sentence, span):
     # "one of these sites", "this method" or "in this case" points back to an earlier sentence
     if re.search(r"\b(these|those)\b|\bthis (method|process|practice|technique|scheme|way|type|kind|case)\b", sentence, re.IGNORECASE):
         return False
-    # So does a subject such as "This scalar" or "It", which a cut can't leave out
-    if re.match(r"(this|such|it|its|another|other|he|she|they|their)\b", sentence, re.IGNORECASE):
+    # So does a subject such as "This scalar" or "It", which a cut can't leave out, also
+    # after an opening phrase, as in "In the UK, it does not need to involve money"
+    if re.match(r"(?:[^,]{1,40},\s*)?(this|such|it|its|another|other|he|she|they|their)\b", sentence, re.IGNORECASE):
         return False
     # A symbol such as V, f or v1 is defined in an earlier sentence. "n" is allowed, as in
-    # "a system of n linear equations", and so are "Cramer's" and abbreviations such as "U.S."
-    plain = re.sub(r"['’]s\b|\b(?:\w\.){2,}", "", sentence)
+    # "a system of n linear equations", and so are "Cramer's", "won't" and abbreviations such as "U.S."
+    plain = re.sub(r"['’](s|t|d|ll|re|ve|m)\b|\b(?:\w\.){2,}", "", sentence)
     if re.search(r"\b(?![aAIn]\b)[^\W\d_]\b|\b[a-z]\d+\b", plain):
         return False
     # "known as smurfing" names the concept instead of using it
@@ -542,9 +549,12 @@ CLAUSE_WORDS = {"and", "but", "or", "while", "whereas", "although", "because", "
 
 # Words that point back to an earlier sentence, so a card must not start with one
 BACK_WORDS = {"this", "these", "those", "such", "it", "he", "she", "they", "its", "their", "his", "her",
-              "another", "additionally", "however", "moreover", "furthermore", "also", "thus",
-              "therefore", "hence", "equivalently", "similarly", "conversely"}
+              "another"}
 BACK_PHRASES = ("in other words", "more precisely", "for example", "for instance")
+
+# Words that only link a statement to the one before it, so they are left out at the start of a card
+LINK_WORDS = {"but", "and", "or", "so", "yet", "however", "additionally", "moreover", "furthermore",
+              "also", "thus", "therefore", "hence", "equivalently", "similarly", "conversely", "finally"}
 
 def cut_card(sentence, span, concept, text, max_words=35):
     """Return the card text if its words are a continuous part of the blanked sentence, else None.
@@ -566,6 +576,11 @@ def cut_card(sentence, span, concept, text, max_words=35):
             break
     else:
         return None
+
+    # "but with [...] laws, money can be confiscated" reads as a card without "but"
+    if words[0] in LINK_WORDS:
+        i += 1
+        words = words[1:]
 
     # A cut must not split a phrase: "with [...] laws" cut to "[...] laws" loses its preposition
     if i > 0 and lowered[i - 1] in PHRASE_WORDS:
@@ -794,14 +809,19 @@ FILLER_WORDS = {"the", "and", "for", "but", "not", "are", "was", "its", "has", "
 
 def answer_leaks(sentence, answer):
     """True if the answer, or a significant word from it, appears in the sentence."""
-    words_in_sentence = sentence.lower().split()
+    # An abbreviation gives the answer away: "[...] (NFTs)" for "Non-Fungible Tokens"
+    initials = "".join(w[0] for w in re.findall(r"[^\W\d_]+", answer)).upper()
+    if len(initials) > 1 and re.search(rf"\b{initials}s?\b", sentence):
+        return True
+
+    words_in_sentence = re.findall(r"\w+", sentence.lower())
     for word in re.sub(r"[^\w\s-]", "", answer.lower()).split():
         # Three-letter words like "tax" count too; only filler words are skipped
         if len(word) < 3 or word in FILLER_WORDS:
             continue
-        stem = word[:4]
         for other in words_in_sentence:
-            if other.startswith(stem):
+            # A four-letter prefix was too loose: "Monero" matched "money"
+            if other.startswith(word) if len(word) < 4 else shares_stem(word, other):
                 return True
     return False
 
@@ -827,8 +847,9 @@ def review_cards(cards, api_key, card_type="Q/A cards"):
   something characteristic of this one concept
 - The sentence starts with a word such as "He", "She", "It", "This", "Additionally"
   or "However" that only makes sense after the previous sentence
-- The sentence is ungrammatical, for example with a word missing or in the wrong
-  form. Cards are copied from the source word for word, so its errors stay in"""
+- The sentence is ungrammatical or incomplete, for example with a word missing,
+  a word in the wrong form, or no main verb, as in an item copied from a list.
+  Cards are copied from the source word for word, so its errors stay in"""
     else:
         criteria = """- The question is open-ended and could be answered many different ways
 - The question asks "what happened" or "what challenges" rather than about a specific concept
@@ -906,6 +927,12 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
         for q, a in kept:
             if "[...]" in q and any("[...]" in q2 and answer_matches_concept(a, a2) for q2, a2 in cards):
                 debug("Review", f"DROPPED (duplicate answer): {q} → {a}")
+                rejected += 1
+                continue
+            # Two cloze cards cut from the same sentence give each other away, since each
+            # shows the other's answer: "Al Capone on [...]" and "[...] on tax evasion"
+            if "[...]" in q and any("[...]" in q2 and find_concept(q2, a) and find_concept(q, a2) for q2, a2 in cards):
+                debug("Review", f"DROPPED (same sentence as another card): {q} → {a}")
                 rejected += 1
                 continue
             cards.append((q, a))

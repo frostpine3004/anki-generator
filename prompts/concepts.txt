@@ -16,3 +16,5 @@ Rules:
 - Do not pick two concepts that share the same word or word stem
 - One concept per line, nothing else
 - Give each concept in the same language as the source text. Never translate
+- In a podcast or video, do not pick the show's name, its hosts or its sponsors.
+  Pick what the episode is about
