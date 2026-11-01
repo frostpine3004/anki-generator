@@ -255,6 +255,10 @@ def fetch_transcript(transcript_url, transcript_type=None):
             return None
     except Exception:
         return None
+    # Without a charset, requests reads text files as Latin-1, so "—" became "â".
+    # Subtitle and JSON transcripts must be UTF-8, and plain-text ones are in practice.
+    if "charset" not in resp.headers.get("content-type", "").lower():
+        resp.encoding = "utf-8"
     content_type = transcript_type or resp.headers.get("content-type", "")
     text = transcript_to_text(resp.text, content_type)
     text = " ".join(text.split())
