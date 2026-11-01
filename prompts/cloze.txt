@@ -15,6 +15,10 @@ Rules:
   with "He", "She", "It", "This", "These", "Additionally" or "However", or that
   only makes sense after the previous sentence. This includes sentences that
   point back with words such as "these sites", "those funds" or "this method"
+- Some candidates show the sentence before it in parentheses. The card shows
+  that sentence too, word for word, so judge the two together and choose the
+  candidate if they make sense together. Reply with only the sentence with
+  [...], not the one before it, and keep its start: cut only its end
 - The sentence must be complete, with a main verb. Lists in the source contain
   items that are not sentences, such as "Online job marketplaces such as
   Fiverr, which accept funds from clients and hold them for freelancers."

@@ -562,13 +562,6 @@ def usable_sentence(sentence, span):
     # A heading before a colon, as in "Structuring: Often known as smurfing, is..."
     if re.match(r"^[\w\s-]{1,40}:\s", sentence):
         return False
-    # "one of these sites", "this method" or "in this case" points back to an earlier sentence
-    if re.search(r"\b(these|those)\b|\bthis (method|process|practice|technique|scheme|way|type|kind|case)\b", sentence, re.IGNORECASE):
-        return False
-    # So does a subject such as "This scalar" or "It", which a cut can't leave out, also
-    # after an opening phrase, as in "In the UK, it does not need to involve money"
-    if re.match(r"(?:[^,]{1,40},\s*)?(this|such|it|its|another|other|he|she|they|their)\b", sentence, re.IGNORECASE):
-        return False
     # A symbol such as V, f or v1 is defined in an earlier sentence. "n" is allowed, as in
     # "a system of n linear equations", and so are "Cramer's", "won't" and abbreviations such as "U.S."
     plain = re.sub(r"['’](s|t|d|ll|re|ve|m)\b|\b(?:\w\.){2,}", "", sentence)
@@ -579,23 +572,75 @@ def usable_sentence(sentence, span):
         return False
     return not sentence[span[1]:].lstrip().startswith((":", "–", "—"))
 
+def points_back(sentence):
+    """True if the sentence only makes sense after the one before it."""
+    # "one of these sites", "this method", "in this case" or "the aforementioned conching"
+    if re.search(r"\b(these|those|aforementioned)\b|\bthis (method|process|practice|technique|scheme|way|type|kind|case)\b", sentence, re.IGNORECASE):
+        return True
+    # A subject such as "This scalar", "That fermentation" or "It", also after an opening
+    # phrase, as in "In the UK, it does not need to involve money"
+    if re.match(r"(?:[^,]{1,40},\s*)?(this|that|such|it|its|another|other|he|she|they|their)\b", sentence, re.IGNORECASE):
+        return True
+    # "More European countries planted cacao trees" means more than ones named earlier.
+    # "More than half..." or "More people ... than ..." says what it compares, so it stands alone.
+    if re.match(r"(?:[^,]{1,40},\s*)?more\b", sentence, re.IGNORECASE) and not re.search(r"\bthan\b", sentence, re.IGNORECASE):
+        return True
+    # A step in a sequence or a time counted from an earlier event: "Now's the time...",
+    # "The next step is grinding", "Over 3,000 years later, ..." ("Then" and "Again" are
+    # left out of the card instead, see LINK_WORDS.)
+    # (",\d" lets the opening phrase hold a number such as "3,000")
+    return bool(re.match(r"(now|the next|next)\b|(?:[^,]|,\d){0,40}\blater,", sentence, re.IGNORECASE))
+
+def context_for(sentences, k, answer, max_words=35):
+    """The sentence before sentences[k], to show on a card whose sentence points back to it.
+
+    None if it can't serve: it must make sense itself, be short enough to show
+    whole, and not give the answer away.
+    """
+    if k == 0:
+        return None
+    before = sentences[k - 1]
+    if not 6 <= len(before.split()) <= max_words or points_back(before):
+        return None
+    if re.search(r"https?://|www\.", before) or re.match(r"^[\w\s-]{1,40}:\s", before):
+        return None
+    if answer_leaks(before, answer):
+        return None
+    # "But before it hits the molds, ..." reads as context without "But"
+    first = re.match(r"(\w+),?\s+", before)
+    if first and first.group(1).lower() in LINK_WORDS:
+        before = before[first.end():]
+        before = before[0].upper() + before[1:]
+    return before
+
 def concept_candidates(concepts, content, max_words=80, per_concept=5):
     """For each concept, the shortest usable source sentences that contain it.
 
+    Each candidate is (concept, sentence, span, context). A sentence that points back
+    gets the sentence before it as context, shown on the card; without one it is left out.
     Long sentences are included too, since the model may cut a shorter part out of them.
     """
-    sentences = [s for s in source_sentences(content) if len(s.split()) <= max_words]
+    sentences = source_sentences(content)
     candidates = []
     for concept in concepts:
         found = []
-        for sentence in sentences:
+        for k, sentence in enumerate(sentences):
+            if len(sentence.split()) > max_words:
+                continue
             span = find_concept(sentence, concept)
-            if span and usable_sentence(sentence, span):
-                found.append((sentence, span))
-        found.sort(key=lambda f: len(f[0]))
+            if not span or not usable_sentence(sentence, span):
+                continue
+            context = None
+            if points_back(sentence):
+                context = context_for(sentences, k, sentence[span[0]:span[1]])
+                if not context:
+                    continue
+            found.append((sentence, span, context))
+        # Shortest first, counting the context the card will also show
+        found.sort(key=lambda f: len(f[0]) + len(f[2] or ""))
         if not found:
             debug("Cloze cards", f"no usable source sentence for: {concept}")
-        candidates += [(concept, sentence, span) for sentence, span in found[:per_concept]]
+        candidates += [(concept, *f) for f in found[:per_concept]]
     return candidates
 
 def blanked(sentence, span):
@@ -609,25 +654,35 @@ PHRASE_WORDS = {"a", "an", "the", "of", "with", "in", "on", "by", "for", "to", "
 CLAUSE_WORDS = {"and", "but", "or", "while", "whereas", "although", "because", "which", "where", "when"}
 
 # Words that point back to an earlier sentence, so a card must not start with one
-BACK_WORDS = {"this", "these", "those", "such", "it", "he", "she", "they", "its", "their", "his", "her",
-              "another"}
+BACK_WORDS = {"this", "that", "these", "those", "such", "it", "he", "she", "they", "its", "their", "his",
+              "her", "another"}
 BACK_PHRASES = ("in other words", "more precisely", "for example", "for instance")
 
 # Words that only link a statement to the one before it, so they are left out at the start of a card
 LINK_WORDS = {"but", "and", "or", "so", "yet", "however", "additionally", "moreover", "furthermore",
-              "also", "thus", "therefore", "hence", "equivalently", "similarly", "conversely", "finally"}
+              "also", "thus", "therefore", "hence", "equivalently", "similarly", "conversely", "finally",
+              "then", "again"}
 
-def cut_card(sentence, span, concept, text, max_words=35):
+def cut_card(sentence, span, concept, text, max_words=35, context=None):
     """Return the card text if its words are a continuous part of the blanked sentence, else None.
 
     The model may shorten a sentence but not reword it, so the words must appear in
     the source in the same order. Case and punctuation may differ, and the card is
     copied from the source, so it keeps the source's own punctuation.
+
+    A sentence that points back comes with the sentence before it as context. The
+    card then shows that sentence whole, and the cut must keep the start of the
+    sentence, which the context explains.
     """
     source = blanked(sentence, span)
     token = r"\[\.\.\.\]|\w+"
     source_tokens = list(re.finditer(token, source))
     words = [w.lower() for w in re.findall(token, text)]
+    # The model may repeat the context sentence in its reply
+    if context:
+        context_words = [w.lower() for w in re.findall(token, context)]
+        if words[:len(context_words)] == context_words:
+            words = words[len(context_words):]
     if words.count("[...]") != 1:
         return None
 
@@ -638,17 +693,21 @@ def cut_card(sentence, span, concept, text, max_words=35):
     else:
         return None
 
-    # "but with [...] laws, money can be confiscated" reads as a card without "but"
-    if words[0] in LINK_WORDS:
-        i += 1
-        words = words[1:]
+    if context:
+        if i > 0:
+            return None
+    else:
+        # "but with [...] laws, money can be confiscated" reads as a card without "but"
+        if words[0] in LINK_WORDS:
+            i += 1
+            words = words[1:]
+        if words[0] in BACK_WORDS or " ".join(words[:3]).startswith(BACK_PHRASES):
+            return None
 
     # A cut must not split a phrase: "with [...] laws" cut to "[...] laws" loses its preposition
     if i > 0 and lowered[i - 1] in PHRASE_WORDS:
         return None
     if lowered[i + len(words) - 1] in PHRASE_WORDS:
-        return None
-    if words[0] in BACK_WORDS or " ".join(words[:3]).startswith(BACK_PHRASES):
         return None
 
     end = source_tokens[i + len(words) - 1].end()
@@ -667,7 +726,7 @@ def cut_card(sentence, span, concept, text, max_words=35):
     # The concept may occur again later in the source sentence; the cut must leave it out
     if others < 6 or len(card.split()) > max_words or find_concept(card, concept):
         return None
-    return card
+    return f"{context} {card}" if context else card
 
 def generate_cloze_from_concepts(concepts, content, api_key):
     """Write one cloze card per concept from a source sentence, with the concept as the blank.
@@ -681,8 +740,11 @@ def generate_cloze_from_concepts(concepts, content, api_key):
     if not candidates:
         return []
 
-    def numbered(i, concept, sentence, span):
-        line = f"{i+1}. [{concept}] {blanked(sentence, span)}"
+    def numbered(i, concept, sentence, span, context):
+        line = f"{i+1}. [{concept}] "
+        if context:
+            line += f"(sentence before it: {context}) "
+        line += blanked(sentence, span)
         words = len(sentence.split())
         if words > 30:
             line += f" ({words} words, too long: cut it)"
@@ -726,10 +788,10 @@ Candidates:
             if not match or not 0 < int(match.group(1)) <= len(candidates):
                 continue
             number = int(match.group(1))
-            concept, sentence, span = candidates[number - 1]
+            concept, sentence, span, context = candidates[number - 1]
             if concept in used:
                 continue
-            card = cut_card(sentence, span, concept, match.group(2))
+            card = cut_card(sentence, span, concept, match.group(2), context=context)
             if not card:
                 debug("Cloze cards", f"REJECTED cut (not word for word, ends mid-phrase, starts by pointing back, too long or too short): {match.group(2)}\nsource: {sentence}")
                 rejected.append((number, match.group(2)))
@@ -744,7 +806,8 @@ Candidates:
 
     # The model often returns a long sentence whole, so ask once more for just those
     if rejected:
-        retry_list = "\n".join(f"{n}. {blanked(*candidates[n - 1][1:])}\n   your card: {text}" for n, text in rejected)
+        retry_list = "\n".join(
+            f"{numbered(n - 1, *candidates[n - 1])}\n   your card: {text}" for n, text in rejected)
         retry = f"""These cloze cards were rejected. A card must be at most 30 words, keep
 at least 6 words besides [...], and be copied word for word from its source
 sentence as one continuous part.
@@ -756,6 +819,10 @@ as "while", "but" or "however" when the rest is a complete statement. Do not
 start with "This", "Such" or another word that points back to an earlier
 sentence. Copy the words exactly; do not fix spelling or change anything.
 
+If the sentence before it is shown, the card shows that sentence too. Then keep
+the start of the sentence with [...], even if it points back, and cut only its
+end. Reply with only the sentence with [...], not the one before it.
+
 Reply with one line per card, the same number and the new card text:
 number: card text
 
@@ -764,7 +831,7 @@ Cards:
         ask(retry)
 
     for concept in concepts:
-        if concept not in used and any(c == concept for c, _, _ in candidates):
+        if concept not in used and any(c[0] == concept for c in candidates):
             debug("Cloze cards", f"no sentence chosen for: {concept}")
     return cards
 
@@ -907,7 +974,9 @@ def review_cards(cards, api_key, card_type="Q/A cards"):
   sentence only gives a statistic, date, estimate or general remark instead of
   something characteristic of this one concept
 - The sentence starts with a word such as "He", "She", "It", "This", "Additionally"
-  or "However" that only makes sense after the previous sentence
+  or "However" that only makes sense after the previous sentence. Some cards
+  have two sentences, where the first gives the context the second needs;
+  judge those two together
 - The sentence is ungrammatical or incomplete, for example with a word missing,
   a word in the wrong form, or no main verb, as in an item copied from a list.
   Cards are copied from the source word for word, so its errors stay in"""
@@ -991,7 +1060,8 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
                 rejected += 1
                 continue
             # Two cloze cards cut from the same sentence give each other away, since each
-            # shows the other's answer: "Al Capone on [...]" and "[...] on tax evasion"
+            # shows the other's answer: "Al Capone on [...]" and "[...] on tax evasion".
+            # A context sentence can't cause this: it never holds its own card's answer.
             if "[...]" in q and any("[...]" in q2 and find_concept(q2, a) and find_concept(q, a2) for q2, a2 in cards):
                 debug("Review", f"DROPPED (same sentence as another card): {q} → {a}")
                 rejected += 1
