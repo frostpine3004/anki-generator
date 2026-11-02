@@ -30,7 +30,7 @@ The pipeline runs in four stages:
 
 | Stage | Function | Output |
 |---|---|---|
-| Extraction | `scrape_url`, `extract_pdf`, `fetch_podcast_transcript`, `transcribe_episode` | Plain text |
+| Extraction | `scrape_url`, `extract_pdf`, `fetch_transcript`, `transcribe_episode` | Plain text |
 | Sampling | `sample_content` | Text within the context budget |
 | Generation | `generate_cards`, or `extract_concepts` + `generate_cloze_from_concepts` | List of (front, back) tuples |
 | Review and export | `review_cards`, `build_deck` | `.apkg` file |
@@ -53,6 +53,20 @@ def transcribe_episode(audio_url, api_key, progress=None, start_min=0, limit_min
 The interface decides what the callback does. The same function would work from
 a command line with a callback that prints.
 
+### State shared between users
+
+Streamlit runs every user's session in the same process, so anything stored at
+module level or on disk is shared. Two things were:
+
+- The debug log was one module-level list. People generating at the same time
+  saw each other's steps.
+- The deck was saved as `<deck name>.apkg` in the app folder. Two users who kept
+  the default name could download each other's cards.
+
+The log is now a `ContextVar`, which holds a separate value for each session's
+thread, and `new_debug_log()` starts a fresh one for every run. The deck is built
+in memory and handed straight to the download button.
+
 ---
 
 ## 2. Two-stage cloze generation
@@ -71,12 +85,51 @@ effect when the finished sentence contains no better candidate. The problem
 happened before the selection step.
 
 The fix was two API calls instead of one. `extract_concepts` returns a list of
-concepts from the source. `generate_cloze_from_concepts` takes that list plus
-the source text and finds a sentence for each, hiding the concept. The blank is
-decided before the sentence exists, and the rule against common words now
-applies during extraction where it can be enforced.
+concepts from the source. `generate_cloze_from_concepts` then builds one card
+per concept, with the concept as the blank. The blank is decided before the
+sentence is chosen, and the rule against common words now applies during
+extraction where it can be enforced.
 
 Cost roughly doubled for that card type. That seemed worth it.
+
+### Copying sentences instead of writing them
+
+Two stages fixed where the blank went, but the model still wrote the sentence.
+It reworded the source and stitched parts of different sentences together, so a
+card could state something the source never said.
+
+Now the model doesn't write sentences at all. For each concept the code finds
+the source sentences that contain it, and `usable_sentence` drops the ones that
+can't work as a card: reference entries, headings, statistics ("US$14 billion in
+[...]" fits almost any financial crime), definitions ("known as …") and
+sentences that use a symbol defined earlier ("span V"). The model only chooses
+the best candidate and may cut a shorter part out of a long one.
+
+`cut_card` checks the cut word for word against the source and rejects cuts
+that split a phrase or stop mid-clause. The blank is made in code, so the answer
+is always the concept in the form the source uses.
+
+### Sentences that point back
+
+A copied sentence can depend on the one before it: "That fermentation generally
+happens right on the farms", or "More European countries planted [...]". These
+were rejected at first, which threw away good material. Now `points_back`
+detects them, and the card shows the sentence before it too, copied whole:
+
+> Fresh from the pod, the seeds are light in color and don't have a lot of
+> flavor. To get the chocolate we know today, they have to be [...].
+
+That sentence must make sense on its own and must not contain the answer, or the
+card is skipped. A leading "But", "However" or "Then" is simply left out of a
+card, since the rest stands on its own.
+
+### A stronger model for judgment
+
+Choosing a sentence and reviewing cards take judgment that `gpt-4o-mini` lacked.
+It chose a sentence the prompt gives as a bad example, and the review kept it.
+These two steps use `gpt-5-mini` at low reasoning effort. At the default effort a
+run took minutes and the app looked hung. The other steps still use
+`gpt-4o-mini`.
 
 ---
 
@@ -107,18 +160,32 @@ which is why generation requests double the number of cards the user asked for.
 Exact word comparison missed leaks across inflection. A sentence containing
 "diet" with "dietary" as the answer passed the check.
 
-The current version compares the first four characters:
+The first fix compared the first four characters. Four was a guess, and it
+turned out too loose: "Monero" matched "money", and a good card was thrown out.
+
+`shares_stem` now requires most of the shorter word to match, at least five
+characters or 80 percent of it:
 
 ```python
-stem = word[:4]
-for other in words_in_sentence:
-    if other.startswith(stem):
-        return True
+def shares_stem(a, b):
+    shortest = min(len(a), len(b))
+    if shortest < 4:
+        return False
+    needed = min(shortest, max(5, int(shortest * 0.8)))
+    return len(os.path.commonprefix([a, b])) >= needed
 ```
 
-Four is a guess. Three produced false positives on short English words, and I
-did not test five or six. It works well enough on Finnish, where the stem
-survives inflection and the ending changes, which was the case I cared about.
+It still works on Finnish, where the stem survives inflection and the ending
+changes, which was the case I cared about: "rahanpesudirektiivi" shares a stem
+with "rahanpesun". A three-letter answer such as "tax" must match the start of a
+word. An abbreviation gives the answer away too, as in "[...] (NFTs)" for
+"non-fungible tokens", so that is checked as well.
+
+### Two cards from one sentence
+
+Two cloze cards cut from the same sentence give each other away, since each
+shows the other's answer: "Al Capone on [...]" and "[...] on tax evasion". The
+second one is dropped.
 
 ---
 
@@ -182,9 +249,27 @@ set of rules.
 Roughly 60 to 70 percent of podcasts publish no transcript, which made the
 RSS-only version useless on most feeds. Whisper fills the gap.
 
-`fetch_episodes` reads the feed and returns episodes with audio URLs and
-durations. `transcribe_episode` downloads the file, trims it if a range was
-selected, splits it if needed, and sends each part to the API.
+`fetch_episodes` reads the feed and returns episodes with audio URLs, durations
+and transcript links. `transcribe_episode` downloads the file, trims it if a
+range was selected, splits it if needed, and sends each part to the API.
+
+### Published transcripts first
+
+Picking an episode checks for a published transcript before anything else,
+since it is free. If there is one, the app uses it and shows no Whisper button.
+If not, one button transcribes the episode, with the cost on it. An earlier
+version only checked the latest episode, behind a button of its own, and had a
+box for pasting a transcript by hand.
+
+Feeds announce transcripts with a `podcast:transcript` tag, one per format.
+`feedparser` keeps only one of them per episode, so `feed_transcripts` reads the
+feed's XML directly, and `pick_transcript` takes the format that is easiest to
+clean: HTML, plain text, VTT, SRT, then JSON.
+
+Subtitle formats put a timestamp before every line, and the first test with a
+Podnews transcript had one in every sentence. `transcript_to_text` removes
+timestamps, line numbers and speaker tags such as `<v Sam>`, and joins the text
+segments of a JSON transcript.
 
 ### The 25 MB limit
 
@@ -213,13 +298,13 @@ Card generation costs fractions of a cent. Transcription costs 0.006 USD per
 minute, about a hundred times more. A week of active development and testing
 came to under ten cents in total, but that was mostly text.
 
-The interface shows an estimate before the call and lets the user pick a start
+The button shows an estimate before the call, and the user can pick a start
 point and duration:
 
 ```python
 span = limit or max(0, minutes - start_min)
 cost = span * flashcards.WHISPER_COST_PER_MINUTE
-st.caption(f"{span:.0f} minutes — costs about ${cost:.2f}")
+label = f"Transcribe {span:.0f} minutes with Whisper (about ${cost:.2f})"
 ```
 
 Trimming happens before splitting, so transcribing ten minutes of an hour-long
@@ -267,6 +352,13 @@ feed = feedparser.parse(resp.content)
 
 That one works on other people's machines too.
 
+### Character encoding
+
+Plain-text transcripts often come without a charset. `requests` then decodes
+them as Latin-1, and "mélangeur" in a chocolate episode came out garbled. VTT and
+JSON must be UTF-8 by their specifications, and SRT and plain-text transcripts
+are in practice, so `fetch_transcript` decodes them as UTF-8.
+
 ### YouTube
 
 Automated retrieval would breach YouTube's terms. The user pastes the transcript
@@ -291,7 +383,8 @@ in code so the model could not break it. Structurally this was right, and the
 debug output showed the model does know Finnish morphology. It changed correct
 inflections to incorrect ones in two cases out of three.
 
-Removed from use. The function is still in the file, uncalled.
+Removed from use, and later from the code. Cloze cards are now copied from the
+source, so the word in the blank already has the form the sentence needs.
 
 Two wrong corrections out of three is worse than none, and the user cannot see
 the error until the wrong form has been memorised.
@@ -313,8 +406,18 @@ that works on three cards may fail on the fourth. Judging a change needs a
 metric set in advance and enough repetitions to separate effect from variance.
 
 **Source quality dominates.** The same code produced usable cards from a
-Wikipedia article and unusable ones from a literature review. When output is
-bad, check the source before the prompt.
+Wikipedia article and unusable ones from a literature review. Podcasts show the
+same: a daily news show gave cards about who did what this week, while a
+scripted explainer (BrainStuff's episode on chocolate) gave five good cards out
+of five. When output is bad, check the source before the prompt.
+
+**Speaker labels in transcripts.** Some shows publish plain-text transcripts
+with a label before every turn, as in "00:24:37 Speaker 2:". These are not
+removed yet.
+
+**List items in PDFs.** A list item without a verb ("Online job marketplaces
+such as Fiverr, which accept funds...") can pass as a sentence. The PDF text has
+no list markers, and the model ignores the rule against it.
 
 **Conflicting prompt rules.** One rule requires taking the sentence from the
 source; another prohibits dictionary-style definitions. In most sources both
@@ -334,3 +437,7 @@ The interface says so rather than trying to detect it.
 **No validation after review.** Cards that pass review are exported as-is.
 Nothing checks that the `.apkg` imports correctly or that the deck contains what
 was asked for.
+
+**Temporary files.** genanki leaves its temporary database in the server's temp
+folder for every deck it builds. Each has a unique name and is never served to
+anyone, but they pile up.
