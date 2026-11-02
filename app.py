@@ -336,5 +336,5 @@ built on both findings. This tool writes the cards; Anki does the rest.
 
 **Open source**
 
-All the code is on GitHub if you want to check any of that.
+All the code is on [GitHub](https://github.com/frostpine3004/anki-generator) if you want to check any of that.
 """)
