@@ -133,6 +133,15 @@ These two steps use `gpt-5-mini` at low reasoning effort. At the default effort 
 run took minutes and the app looked hung. The other steps still use
 `gpt-4o-mini`.
 
+### Both card types
+
+"Both" used to ask for Q/A and cloze cards in one call, so its cloze cards were
+written by the model and skipped every check above. Now it runs the two
+pipelines one after the other. Half the cards go through the cloze pipeline,
+and Q/A cards fill the rest, so a source with few good sentences still gives
+the number of cards asked for. The Q/A step gets the cloze cards as cards not
+to repeat, so the two don't test the same fact.
+
 ---
 
 ## 3. Card-type-aware review
@@ -227,7 +236,7 @@ Prompts started out embedded in the code. Editing a rule meant editing a string
 inside a function, and the change disappeared into the commit diff among
 unrelated lines.
 
-They now live in five text files under `prompts/`, loaded at call time:
+They now live in text files under `prompts/`, loaded at call time:
 
 ```python
 def load_prompt(name):
@@ -425,12 +434,6 @@ no list markers, and the model ignores the rule against it.
 source; another prohibits dictionary-style definitions. In most sources both
 hold. In a theory section where concepts are defined, every source sentence is a
 definition and nothing satisfies both. Unresolved.
-
-**"Both" mode is inconsistent.** It uses single-call generation while pure cloze
-mode uses the two-stage pipeline, so its cloze cards are weaker. `review_cards`
-also receives "Both" as the card type, which matches neither branch cleanly, so
-`answer_leaks` never runs for it. Untested end to end. Either it should run both
-pipelines and merge, or it should be removed.
 
 **PDF page numbering.** Page selection counts physical pages from the start of
 the file, which differs from printed numbers when a document has front matter.

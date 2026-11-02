@@ -868,11 +868,7 @@ def generate_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards
         return generate_cloze_from_concepts(concepts, content, api_key)
 
     client = OpenAI(api_key=api_key)
-    prompt_files = {
-        "Q/A cards": "qa",
-        "Both": "both",
-    }
-    card_instruction = load_prompt(prompt_files.get(card_type, "qa"))
+    card_instruction = load_prompt("qa")
     shared_rules = load_prompt("shared_rules")
     avoid = ""
     if exclude:
@@ -894,7 +890,10 @@ Content: {sample_content(content)}"""
         ]
     )
 
-    return parse_cards(response.choices[0].message.content)
+    cards = parse_cards(response.choices[0].message.content)
+    for q, a in cards:
+        debug("Q/A cards", f"written: {q} → {a}")
+    return cards
 
 def parse_cards(text):
     """Parse both Q/A and cloze formats from the model's response."""
@@ -1043,13 +1042,24 @@ Cards:
 
     return keep, len(cards) - len(keep)
 
-def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards", max_rounds=3):
+def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards", max_rounds=3, exclude=None):
     """Generate and review cards, topping up with new ones until num_cards pass review.
 
+    exclude: cards already in the deck, whose facts new cards must not repeat.
     Returns (cards, rejected_count).
     """
+    if card_type == "Both":
+        # Each type goes through its own pipeline, so cloze cards are still copied from
+        # the source and checked. Q/A cards fill whatever cloze cards couldn't, and are
+        # told the cloze cards so they don't ask about the same facts.
+        cloze, cloze_rejected = generate_reviewed_cards(
+            content, api_key, num_cards // 2, difficulty, "Cloze cards", max_rounds)
+        qa, qa_rejected = generate_reviewed_cards(
+            content, api_key, num_cards - len(cloze), difficulty, "Q/A cards", max_rounds, exclude=cloze)
+        return qa + cloze, cloze_rejected + qa_rejected
+
     cards = []
-    tried = []
+    tried = list(exclude or [])
     tried_concepts = []
     rejected = 0
 
@@ -1085,6 +1095,9 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
                 continue
             cards.append((q, a))
 
+    # Q/A generation asks for twice the cards needed, so several usually pass review
+    for q, a in cards[num_cards:]:
+        debug("Review", f"passed but not needed: {q} → {a}")
     return cards[:num_cards], rejected
 
 
