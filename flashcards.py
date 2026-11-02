@@ -1123,29 +1123,31 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
     return cards[:num_cards], rejected
 
 
+# One card type for every deck. Anki recognises it by its ID, so all imports share it
+# instead of each adding another "Simple Model-xxxx". Changing the fields or
+# templates later needs a new ID, or Anki will treat it as the old type.
+CARD_MODEL = genanki.Model(
+    1079691181,
+    'AI Flashcard Generator',
+    fields=[{'name': 'Question'}, {'name': 'Answer'}],
+    templates=[{
+        'name': 'Card 1',
+        'qfmt': '{{Question}}',
+        'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}',
+    }]
+)
+
 def build_deck(flashcards, deck_name):
     """Build an Anki deck and return the .apkg file's contents as bytes.
 
     The deck is built in memory instead of saved under its name in the app folder:
     two users who kept the default name would overwrite and download each other's file.
     """
-    model_id = random.randrange(1 << 30, 1 << 31)
-    model = genanki.Model(
-        model_id,
-        'Simple Model',
-        fields=[{'name': 'Question'}, {'name': 'Answer'}],
-        templates=[{
-            'name': 'Card 1',
-            'qfmt': '{{Question}}',
-            'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}',
-        }]
-    )
-
     deck_id = random.randrange(1 << 30, 1 << 31)
     deck = genanki.Deck(deck_id, deck_name)
 
     for question, answer in flashcards:
-        deck.add_note(genanki.Note(model=model, fields=[question, answer]))
+        deck.add_note(genanki.Note(model=CARD_MODEL, fields=[question, answer]))
 
     buffer = io.BytesIO()
     genanki.Package(deck).write_to_file(buffer)
