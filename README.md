@@ -27,7 +27,7 @@ Run the Streamlit app, enter your own OpenAI API key and choose a source:
 * **PDF Upload**: choose a page range (e.g. `1, 5-8, 27-30`) and preview the extracted text
 * **My Own Notes**: paste any text
 
-Then choose the number of cards, the difficulty, the card type (Q/A, cloze or both) and, optionally, a topic to narrow the source down to. The app shows the generated cards and offers the deck as a download. Import the `.apkg` file into Anki.
+Then choose the number of cards, the difficulty, the card type (Q/A, cloze or both) and, optionally, a topic to narrow the source down to. A progress bar shows which step is running. The app shows the generated cards and offers the deck as a download. Import the `.apkg` file into Anki. The "Show debug info" checkbox shows what happened to each concept and card along the way.
 
 The tool is meant for students and self-learners who already use Anki. It costs only what the OpenAI API charges: around a cent for cards from an article, and about $0.006 per minute of transcribed audio.
 
@@ -50,26 +50,44 @@ Requirements: Python 3.10+, an OpenAI API key, Anki, and [ffmpeg](https://ffmpeg
 
 ## Data sources and AI methods
 
-Data comes from whatever the user provides: public webpages (via `requests` and BeautifulSoup), PDFs (PyPDF2), podcast RSS feeds (feedparser) and pasted text. Nothing is stored.
+Data comes from whatever the user provides: a webpage, a PDF, a podcast episode, a YouTube transcript pasted by hand, or their own notes. For a podcast, the app uses the transcript the show publishes if there is one, and Whisper speech recognition if not. Nothing is stored.
 
-AI methods:
-* **Card generation** with `gpt-5-mini` for every step. Listing concepts and writing Q/A cards use minimal reasoning effort, since they read the whole source and more thinking made a run take minutes; choosing cloze sentences and reviewing use low effort. `gpt-4o-mini`, used at first, often ignored the rules. For long sources, evenly spaced chunks are sampled across the whole text instead of only its beginning. "Both" runs the cloze and Q/A pipelines separately and combines the cards.
-* **Concept extraction for cloze cards**: the model first lists the key concepts, and the main topic of the text is dropped since it appears in nearly every sentence. The app then finds the source sentences that contain each concept, skipping reference entries, glossary lines, statistics ("US$14 billion"), definitions ("known as …", "called the …"), references to an earlier part of a podcast ("talking about earlier", "after the break") and sentences that use a symbol defined earlier ("span V"). A sentence that points back to an earlier one ("these sites", "That fermentation") gets the sentence before it shown on the card as context, as long as that sentence stands on its own and doesn't give the answer away; otherwise it is skipped. Words that PDF extraction split in two ("anonymit y") are joined back first. The model picks the sentence that points to that one concept best, and may cut a continuous part out of a long one. The app checks the cut word for word against the source, rejects cuts that split a phrase or stop mid-clause, and blanks the concept out. Every cloze card is a real sentence from the source (or two, with context), and the answer is the concept in the exact form the source uses.
-* **Top-up rounds**: if too few cards pass, up to three rounds ask for new concepts, leaving out every concept already tried.
-* **Self-review**: a second model call rejects vague, guessable or bibliographic cards, and cloze cards whose blank other terms from the same field would fill equally well. A rule-based check also drops cloze cards whose answer leaks into the sentence.
-* **Debug view**: the "Show debug info" checkbox lists what happened to each concept and card at every step.
-* **Speech-to-text** with OpenAI Whisper (`whisper-1`). Audio over 25 MB is split into chunks with ffmpeg.
-* **Topic filter**: a simple stem-matching filter keeps only the paragraphs that mention your topic, plus optional surrounding context.
+How the cards are made:
+1. The text is extracted from the source and cleaned.
+2. A language model (OpenAI `gpt-5-mini`) lists the key concepts in it.
+3. For cloze cards, the app finds the source sentences that contain each concept, the model picks the best one, and the app blanks the concept out. Sentences are copied word for word, so a cloze card can't say anything the source doesn't. If a sentence depends on the one before it, the card shows both.
+4. For Q/A cards, the model writes the questions and answers.
+5. A second model call and rule-based checks drop weak cards, such as ones whose answer can be guessed from the sentence itself. If too few cards pass, the app tries again with new concepts, up to three rounds.
+6. The cards are exported as an Anki deck.
+
+The technical details, and why each step is built the way it is, are in [DESIGN.md](DESIGN.md).
+
+### Building AI course themes in this project
+
+* **Neural networks and deep learning:** The app uses two ready-trained deep neural networks through OpenAI's API: a large language model (`gpt-5-mini`) that lists the key concepts, picks sentences, writes Q/A cards and reviews them, and Whisper, which turns podcast audio into text.
+* **Working with text:** Before the AI sees anything, the app splits the text into sentences and words and compares words by their stem, so "fermented" in a card is recognized as the same word as "fermentation" elsewhere. It also counts how many sentences each word appears in. A word that appears in a large share of them, such as "volcano" in an article about volcanoes, is the main topic and is never used as a blank. This is the same idea as document frequency in TF-IDF.
+* **Probability:** A language model writes by choosing each next word by probability, so the same text can give different cards on different runs, and some of them will be wrong or vague. That is why the app never trusts the model blindly: cloze cards are checked word for word against the source, and every card goes through a review.
+* **Classification:** The review step is a classifier with two classes, keep or reject. Unlike the classifiers in the course, it isn't trained on labeled examples. A language model applies written rules, such as "the answer must not be guessable from grammar alone", and simple code rules catch the rest, such as a card whose answer appears in the sentence itself.
 
 ## Challenges
 
+What this project does not solve:
+* It doesn't check that a card is true. Cloze cards are copied word for word from the source, so they are as accurate as the source, but Q/A cards are written by the model and can contain mistakes. Cards should be read through before studying them.
+* It doesn't replace understanding the material. Writing cards yourself is part of learning, and this tool skips that step, so it works best on material you have already read.
+* It can't read scanned PDFs, which have no extractable text.
+
+Technical limitations:
 * Card quality: models easily produce cards that can be answered from sentence structure alone, or cloze cards whose answer appears elsewhere in the sentence. The review step reduces this but doesn't eliminate it.
 * Grounding: when the model wrote cloze sentences itself, it reworded the source and sometimes stitched two sentences into a claim the source never made. Cloze cards are now copied from the source, so the model can only choose and cut, not write.
 * PDF text extraction splits words ("cryptocurrencie s"), drops spaces after full stops and leaves citation markers, which all have to be cleaned before sentences can be matched.
-* Strict filters mean a source with few concrete sentences can yield fewer cards than requested.
-* PDF page numbers in the file don't always match the printed page numbers, and scanned PDFs have no extractable text.
-* Content is sent to OpenAI's API, so the tool isn't suited for confidential material.
+* Strict filters mean a source with few concrete sentences, such as a short news episode, can yield fewer or weaker cards than requested.
+* PDF page numbers in the file don't always match the printed page numbers.
 * The topic filter matches word stems, not meaning, so it can miss synonyms.
+
+Ethical considerations:
+* Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing.
+* Copyright: cloze cards copy sentences from the source, so a deck made from someone else's article, book or podcast is for personal study, not for sharing or selling.
+* Access: the tool needs a paid OpenAI API key. A run costs around a cent, but not every student can get a key.
 
 ## What next?
 
@@ -78,9 +96,11 @@ AI methods:
 * Automatic topic tags and duplicate detection against existing decks
 * AnkiConnect integration to write cards straight into Anki
 
+To move on, I would need a set of test sources with cards rated by real Anki users, so card quality can be measured instead of judged one run at a time, and feedback from students using the tool for their own courses.
+
 ## Acknowledgments
 
-* Based on [marcbln/ai-flashcard-generator](https://github.com/marcbln/ai-flashcard-generator), with significant upgrades
+* Based on [marcbln/ai-flashcard-generator](https://github.com/marcbln/ai-flashcard-generator) by Marc Christenfeldt (MIT License), with significant upgrades
 * Building AI course by Reaktor and the University of Helsinki
 * Karpicke, J. D. & Roediger, H. L. (2008). The critical importance of retrieval for learning. *Science*, 319(5865)
 * Cepeda, N. J. et al. (2006). Distributed practice in verbal recall tasks: A review and quantitative synthesis. *Psychological Bulletin*, 132(3)
