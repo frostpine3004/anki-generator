@@ -101,8 +101,10 @@ card could state something the source never said.
 Now the model doesn't write sentences at all. For each concept the code finds
 the source sentences that contain it, and `usable_sentence` drops the ones that
 can't work as a card: reference entries, headings, statistics ("US$14 billion in
-[...]" fits almost any financial crime), definitions ("known as …") and
-sentences that use a symbol defined earlier ("span V"). The model only chooses
+[...]" fits almost any financial crime), definitions ("known as …", "called
+the …"), references to an earlier part of a podcast ("the [...] that Daryl Peel
+was talking about earlier", "after the break") and sentences that use a symbol
+defined earlier ("span V"). The model only chooses
 the best candidate and may cut a shorter part out of a long one.
 
 `cut_card` checks the cut word for word against the source and rejects cuts

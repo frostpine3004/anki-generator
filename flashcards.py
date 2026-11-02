@@ -567,10 +567,27 @@ def usable_sentence(sentence, span):
     plain = re.sub(r"['’](s|t|d|ll|re|ve|m)\b|\b(?:\w\.){2,}", "", sentence)
     if re.search(r"\b(?![aAIn]\b)[^\W\d_]\b|\b[a-z]\d+\b", plain):
         return False
-    # "known as smurfing" names the concept instead of using it
-    if re.search(r"\b(known as|called|termed|referred to as)\W*$", sentence[:span[0]], re.IGNORECASE):
+    # "known as smurfing" or "a new model called the Consumer Welfare Standard" names
+    # the concept instead of using it
+    if re.search(r"\b(known as|called|termed|referred to as)(\s+(the|a|an))?\W*$", sentence[:span[0]], re.IGNORECASE):
+        return False
+    if refers_to_talk(sentence):
         return False
     return not sentence[span[1]:].lstrip().startswith((":", "–", "—"))
+
+def refers_to_talk(sentence):
+    """True if the sentence refers to an earlier part of a spoken show.
+
+    "the cattle cycle that Daryl Peel was talking about earlier", "As we've been
+    hearing, ..." and "Coming up after the break" need the episode around them,
+    and the sentence before doesn't help, so they can't be used even as context.
+    """
+    return bool(re.search(
+        r"\b(talk|talked|talking|spoke|mention|mentioned|said|discussed|heard)\b[^.?!]{0,30}"
+        r"\b(earlier|a (minute|moment|while) ago)\b"
+        r"|\bas (I|we|you)(['’]ve| have)?( been)? (said|saying|heard|hearing|discussed|talked|mentioned)\b"
+        r"|\b(after|before) the break\b",
+        sentence, re.IGNORECASE))
 
 def points_back(sentence):
     """True if the sentence only makes sense after the one before it."""
@@ -600,7 +617,7 @@ def context_for(sentences, k, answer, max_words=35):
     if k == 0:
         return None
     before = sentences[k - 1]
-    if not 6 <= len(before.split()) <= max_words or points_back(before):
+    if not 6 <= len(before.split()) <= max_words or points_back(before) or refers_to_talk(before):
         return None
     if re.search(r"https?://|www\.", before) or re.match(r"^[\w\s-]{1,40}:\s", before):
         return None
