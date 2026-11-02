@@ -67,7 +67,6 @@ AI methods:
 * Grounding: when the model wrote cloze sentences itself, it reworded the source and sometimes stitched two sentences into a claim the source never made. Cloze cards are now copied from the source, so the model can only choose and cut, not write.
 * PDF text extraction splits words ("cryptocurrencie s"), drops spaces after full stops and leaves citation markers, which all have to be cleaned before sentences can be matched.
 * Strict filters mean a source with few concrete sentences can yield fewer cards than requested.
-* Only around 30–40% of podcasts publish transcripts, and Whisper transcription costs money, so the time range and cost estimate matter.
 * PDF page numbers in the file don't always match the printed page numbers, and scanned PDFs have no extractable text.
 * Content is sent to OpenAI's API, so the tool isn't suited for confidential material.
 * The topic filter matches word stems, not meaning, so it can miss synonyms.
