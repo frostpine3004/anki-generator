@@ -125,13 +125,23 @@ That sentence must make sense on its own and must not contain the answer, or the
 card is skipped. A leading "But", "However" or "Then" is simply left out of a
 card, since the rest stands on its own.
 
-### A stronger model for judgment
+### A stronger model
 
 Choosing a sentence and reviewing cards take judgment that `gpt-4o-mini` lacked.
 It chose a sentence the prompt gives as a bad example, and the review kept it.
-These two steps use `gpt-5-mini` at low reasoning effort. At the default effort a
-run took minutes and the app looked hung. The other steps still use
-`gpt-4o-mini`.
+These two steps moved to `gpt-5-mini` at low reasoning effort first. At the
+default effort a run took minutes and the app looked hung.
+
+Concept extraction and Q/A cards stayed on `gpt-4o-mini` for a while, and its
+Q/A answers were often clumsy fragments ("Exponent needed for base"). Now every
+text step uses `gpt-5-mini`, set in one place in `flashcards.py`. It costs a
+little more per run.
+
+At first every step thought at low effort, and a run on ten PDF pages took four
+minutes. Listing concepts and writing Q/A cards read the whole source text, so
+thinking there is slow, and those steps need knowledge more than judgment. They
+now think as little as possible ("minimal"), and only choosing and reviewing
+think at low effort. The debug log shows how long each step took.
 
 ### Both card types
 

@@ -10,6 +10,7 @@ import os
 import feedparser
 import subprocess
 import tempfile
+import time
 import json
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -34,13 +35,26 @@ def debug(step, text):
 WHISPER_COST_PER_MINUTE = 0.006
 WHISPER_MAX_BYTES = 25 * 1024 * 1024
 
-# Choosing cloze sentences and reviewing cards takes judgment that gpt-4o-mini lacks: it
-# chose a sentence the prompt gives as a bad example, and the review kept it. These prompts
-# are short, so a stronger model costs little. Other steps still use gpt-4o-mini.
-# It thinks before answering, and at the default effort a run takes minutes, so the effort
-# is set low. A model that doesn't reason, such as gpt-4o-mini, rejects this setting.
-JUDGE_MODEL = "gpt-5-mini"
-JUDGE_EFFORT = "low"
+# Every text step uses gpt-5-mini. gpt-4o-mini, used at first, ignored the rules: it
+# chose a sentence the prompt gives as a bad example, and the review kept it.
+# gpt-5-mini thinks before answering, which takes time. Choosing sentences and reviewing
+# cards need that judgment, so they think a little. Listing concepts and writing Q/A cards
+# read the whole source text, and with the same setting a run took four minutes, so they
+# think as little as possible. A model that doesn't reason, such as gpt-4o-mini, rejects
+# these settings.
+MODEL = "gpt-5-mini"
+JUDGING_EFFORT = "low"
+WRITING_EFFORT = "minimal"
+
+def ask_model(client, step, prompt, effort, system=None):
+    """Send one prompt to MODEL and return the reply. The time it took goes to the debug log."""
+    messages = [{"role": "user", "content": prompt}]
+    if system:
+        messages.insert(0, {"role": "system", "content": system})
+    start = time.monotonic()
+    response = client.chat.completions.create(model=MODEL, reasoning_effort=effort, messages=messages)
+    debug("Time", f"{step}: {time.monotonic() - start:.0f} s")
+    return response.choices[0].message.content
 
 HEADERS = {
     'User-Agent': 'AnkiFlashcardGenerator/1.0 (https://github.com/frostpine3004/anki-generator)'
@@ -413,13 +427,10 @@ def extract_concepts(content, api_key, count, exclude=None):
 Text:
 {sample_content(content)}"""
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+    reply = ask_model(client, "listing concepts", prompt, WRITING_EFFORT)
 
     concepts = []
-    for line in response.choices[0].message.content.split('\n'):
+    for line in reply.split('\n'):
         line = line.strip().lstrip("0123456789.-• ")
         if line:
             concepts.append(line)
@@ -792,15 +803,11 @@ Candidates:
     cards = []
     used = set()
 
-    def ask(prompt):
+    def ask(prompt, step):
         """Send the prompt and keep the cuts that pass. Returns the rejected ones."""
-        response = client.chat.completions.create(
-            model=JUDGE_MODEL,
-            reasoning_effort=JUDGE_EFFORT,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        reply = ask_model(client, step, prompt, JUDGING_EFFORT)
         rejected = []
-        for line in response.choices[0].message.content.split('\n'):
+        for line in reply.split('\n'):
             match = re.match(r"^\s*(\d+)\s*[:.)]\s*(.+)$", line)
             if not match or not 0 < int(match.group(1)) <= len(candidates):
                 continue
@@ -819,7 +826,7 @@ Candidates:
             cards.append((card, answer))
         return rejected
 
-    rejected = ask(prompt)
+    rejected = ask(prompt, "choosing cloze sentences")
 
     # The model often returns a long sentence whole, so ask once more for just those
     if rejected:
@@ -845,7 +852,7 @@ number: card text
 
 Cards:
 {retry_list}"""
-        ask(retry)
+        ask(retry, "cutting rejected cloze cards again")
 
     for concept in concepts:
         if concept not in used and any(c[0] == concept for c in candidates):
@@ -882,15 +889,10 @@ def generate_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards
 
 Content: {sample_content(content)}"""
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that creates educational flashcards."},
-            {"role": "user", "content": prompt}
-        ]
-    )
+    reply = ask_model(client, "writing Q/A cards", prompt, WRITING_EFFORT,
+                      system="You are a helpful assistant that creates educational flashcards.")
 
-    cards = parse_cards(response.choices[0].message.content)
+    cards = parse_cards(reply)
     for q, a in cards:
         debug("Q/A cards", f"written: {q} → {a}")
     return cards
@@ -902,7 +904,8 @@ def parse_cards(text):
     cloze_sentence = None
 
     for line in text.split('\n'):
-        line = line.strip()
+        # A newer model may write "**Q:** ..." in Markdown
+        line = line.replace("**", "").strip()
         if not line:
             continue
 
@@ -1016,14 +1019,10 @@ Example: 1, 3, 4
 Cards:
 {card_list}"""
 
-    response = client.chat.completions.create(
-        model=JUDGE_MODEL,
-        reasoning_effort=JUDGE_EFFORT,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    reply = ask_model(client, "reviewing cards", prompt, JUDGING_EFFORT)
 
     keep = []
-    for part in response.choices[0].message.content.split(','):
+    for part in reply.split(','):
         part = part.strip().rstrip('.')
         if part.isdigit():
             index = int(part) - 1
