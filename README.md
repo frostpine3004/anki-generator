@@ -92,7 +92,7 @@ Ethical considerations:
 ## What next?
 
 * Interview prep mode with "why" and "compare" questions answered in short key points
-* Cards from terminal man pages
+* Cards from terminal man pages, for people who want to become better programmers and better at fixing code
 * Automatic topic tags and duplicate detection against existing decks
 * AnkiConnect integration to write cards straight into Anki
 
