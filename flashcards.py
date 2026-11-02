@@ -32,6 +32,15 @@ def debug(step, text):
     if log is not None:
         log.append((step, text))
 
+# Called with a short description of each step as it starts, so the interface can show
+# what a run of a minute or more is doing. Kept per session, like the debug log.
+_progress = ContextVar("progress", default=None)
+
+def report(text):
+    callback = _progress.get()
+    if callback:
+        callback(text)
+
 WHISPER_COST_PER_MINUTE = 0.006
 WHISPER_MAX_BYTES = 25 * 1024 * 1024
 
@@ -51,6 +60,7 @@ def ask_model(client, step, prompt, effort, system=None):
     messages = [{"role": "user", "content": prompt}]
     if system:
         messages.insert(0, {"role": "system", "content": system})
+    report(step)
     start = time.monotonic()
     response = client.chat.completions.create(model=MODEL, reasoning_effort=effort, messages=messages)
     debug("Time", f"{step}: {time.monotonic() - start:.0f} s")
@@ -875,7 +885,7 @@ number: card text
 
 Cards:
 {retry_list}"""
-        ask(retry, "cutting rejected cloze cards again")
+        ask(retry, "retrying rejected cloze cards")
 
     for concept in concepts:
         if concept not in used and any(c[0] == concept for c in candidates):
@@ -1064,20 +1074,24 @@ Cards:
 
     return keep, len(cards) - len(keep)
 
-def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards", max_rounds=3, exclude=None):
+def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards", max_rounds=3,
+                            exclude=None, progress=None):
     """Generate and review cards, topping up with new ones until num_cards pass review.
 
     exclude: cards already in the deck, whose facts new cards must not repeat.
+    progress: called with a short description of each step as it starts.
     Returns (cards, rejected_count).
     """
+    _progress.set(progress)
     if card_type == "Both":
         # Each type goes through its own pipeline, so cloze cards are still copied from
         # the source and checked. Q/A cards fill whatever cloze cards couldn't, and are
         # told the cloze cards so they don't ask about the same facts.
         cloze, cloze_rejected = generate_reviewed_cards(
-            content, api_key, num_cards // 2, difficulty, "Cloze cards", max_rounds)
+            content, api_key, num_cards // 2, difficulty, "Cloze cards", max_rounds, progress=progress)
         qa, qa_rejected = generate_reviewed_cards(
-            content, api_key, num_cards - len(cloze), difficulty, "Q/A cards", max_rounds, exclude=cloze)
+            content, api_key, num_cards - len(cloze), difficulty, "Q/A cards", max_rounds,
+            exclude=cloze, progress=progress)
         return qa + cloze, cloze_rejected + qa_rejected
 
     cards = []

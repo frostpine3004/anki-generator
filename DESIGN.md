@@ -143,6 +143,14 @@ thinking there is slow, and those steps need knowledge more than judgment. They
 now think as little as possible ("minimal"), and only choosing and reviewing
 think at low effort. The debug log shows how long each step took.
 
+A run still takes a minute or more, and a spinner alone made it look stuck. The
+app now shows a progress bar with the name of the running step, which
+`generate_reviewed_cards` reports through a `progress` callback like the one
+`transcribe_episode` uses. The run happens in a second thread so the page can
+keep the bar moving. How many rounds a run needs isn't known in advance, so the
+bar moves by time: fast at first, then slower, and it fills when the run ends.
+A seconds counter was tried first and wasn't useful.
+
 ### Both card types
 
 "Both" used to ask for Q/A and cloze cards in one call, so its cloze cards were

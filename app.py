@@ -1,5 +1,13 @@
+import contextvars
+import math
+import time
+from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
 import flashcards
+
+# Sets how fast the progress bar fills. A run that takes this long ends with the bar
+# about two-thirds full; a typical cloze run (about 50 s) ends at about 80 %.
+TYPICAL_SECONDS = {"Cloze cards": 30, "Q/A cards": 15, "Both": 45}
 
 
 # Streamlit reruns the whole script on every click, so the feed and transcript
@@ -219,8 +227,34 @@ if st.button("Generate Flashcards"):
         st.caption(f"Topic filter kept {matched} of {total} paragraphs")
 
     debug_log = flashcards.new_debug_log()
-    with st.spinner("Generating and checking flashcards with AI..."):
-        cards, rejected = flashcards.generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type)
+
+    # A run takes a minute or more. It runs in a second thread so this one can keep
+    # the progress bar moving and show which step is running.
+    current = {"step": "starting"}
+
+    def on_progress(step):
+        # Called from the worker thread, which can't draw on the page, so only note the step
+        current["step"] = step
+
+    # copy_context hands the worker this session's debug log
+    pool = ThreadPoolExecutor(max_workers=1)
+    run = pool.submit(contextvars.copy_context().run, flashcards.generate_reviewed_cards,
+                      content, api_key, num_cards, difficulty, card_type, progress=on_progress)
+    # Lets the thread end when the run is done, without making this one wait for it
+    pool.shutdown(wait=False)
+
+    bar = st.progress(0.0)
+    started = time.monotonic()
+    while not run.done():
+        # How many rounds a run needs isn't known in advance, so the bar moves by time:
+        # quickly at first, then ever slower, and fills only when the run ends.
+        share = 1 - math.exp(-(time.monotonic() - started) / TYPICAL_SECONDS[card_type])
+        step = current["step"]
+        bar.progress(share, text=f"{step[0].upper()}{step[1:]}...")
+        time.sleep(0.3)
+    bar.progress(1.0, text="Done")
+    cards, rejected = run.result()
+    bar.empty()
 
     if rejected:
         st.caption(f"{rejected} cards rejected in review")
