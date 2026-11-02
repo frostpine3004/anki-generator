@@ -92,13 +92,15 @@ elif input_type == "Podcast RSS Feed":
             start_min = col1.number_input("Start at minute", min_value=0, value=0, step=5)
             limit = col2.number_input("Minutes to transcribe (0 = to end)", min_value=0, value=0, step=5)
 
-            span = limit or minutes
+            # Without a length, Whisper transcribes from the start minute to the end
+            span = limit or max(0, minutes - start_min)
             if span:
                 cost = span * flashcards.WHISPER_COST_PER_MINUTE
                 label = f"Transcribe {span:.0f} minutes with Whisper (about ${cost:.2f})"
             else:
                 label = "Transcribe with Whisper"
-                st.caption("Duration unknown — cost cannot be estimated in advance")
+                if not minutes:
+                    st.caption("Duration unknown — cost cannot be estimated in advance")
 
             # Keep each transcript with the episode and range it came from,
             # so switching episodes never sends an old transcript to the card step.
