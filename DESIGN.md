@@ -63,9 +63,14 @@ module level or on disk is shared. Two things were:
 - The deck was saved as `<deck name>.apkg` in the app folder. Two users who kept
   the default name could download each other's cards.
 
-The log is now a `ContextVar`, which holds a separate value for each session's
-thread, and `new_debug_log()` starts a fresh one for every run. The deck is built
-in memory and handed straight to the download button.
+The log became a `ContextVar`, which holds a separate value for each session's
+thread, and the deck is built in memory and handed straight to the download
+button. The progress callback uses a `ContextVar` the same way.
+
+The debug view was later removed from the app altogether. It was a development
+tool: it listed every concept, chosen sentence and rejected card with the reason,
+which was how most of the filters in this document were found. For someone
+generating cards it was noise.
 
 ---
 
@@ -141,7 +146,7 @@ At first every step thought at low effort, and a run on ten PDF pages took four
 minutes. Listing concepts and writing Q/A cards read the whole source text, so
 thinking there is slow, and those steps need knowledge more than judgment. They
 now think as little as possible ("minimal"), and only choosing and reviewing
-think at low effort. The debug log shows how long each step took.
+think at low effort. Timing each step in the debug log showed where the time went.
 
 A run still takes a minute or more, and a spinner alone made it look stuck. The
 app now shows a progress bar with the name of the running step, which

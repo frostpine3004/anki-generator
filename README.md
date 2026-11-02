@@ -27,7 +27,7 @@ Run the Streamlit app, enter your own OpenAI API key and choose a source:
 * **PDF Upload**: choose a page range (e.g. `1, 5-8, 27-30`) and preview the extracted text
 * **My Own Notes**: paste any text
 
-Then choose the number of cards, the difficulty, the card type (Q/A, cloze or both) and, optionally, a topic to narrow the source down to. A progress bar shows which step is running. The app shows the generated cards and offers the deck as a download. Import the `.apkg` file into Anki. The "Show debug info" checkbox shows what happened to each concept and card along the way.
+Then choose the number of cards, the difficulty, the card type (Q/A, cloze or both) and, optionally, a topic to narrow the source down to. A progress bar shows which step is running. The app shows the generated cards and offers the deck as a download. Import the `.apkg` file into Anki.
 
 The tool is meant for students and self-learners who already use Anki. It costs only what the OpenAI API charges: around a cent for cards from an article, and about $0.006 per minute of transcribed audio.
 
@@ -83,9 +83,10 @@ Technical limitations:
 * Strict filters mean a source with few concrete sentences, such as a short news episode, can yield fewer or weaker cards than requested.
 * PDF page numbers in the file don't always match the printed page numbers.
 * The topic filter matches word stems, not meaning, so it can miss synonyms.
+* The public app runs on Streamlit Community Cloud's free tier, which has limited memory and computing time. Podcast audio is downloaded to the server before transcription, so a long episode takes several minutes, and heavy use can make the app restart. Transcribing only part of an episode keeps it lighter.
 
 Ethical considerations:
-* Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing.
+* Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing, and your API key is used only for your own session, never saved or written to a log. The code is public, so anyone can check this.
 * Copyright: cloze cards copy sentences from the source, so a deck made from someone else's article, book or podcast is for personal study, not for sharing or selling.
 * Access: the tool needs a paid OpenAI API key. A run costs around a cent, but not every student can get a key.
 
