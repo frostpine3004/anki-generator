@@ -605,6 +605,9 @@ def points_back(sentence):
     # "one of these sites", "this method", "in this case" or "the aforementioned conching"
     if re.search(r"\b(these|those|aforementioned)\b|\bthis (method|process|practice|technique|scheme|way|type|kind|case)\b", sentence, re.IGNORECASE):
         return True
+    # An opening phrase such as "In this extended sense," or "For that reason,"
+    if re.match(r"(in|at|by|for|from|on|with|under|to|as)\s+(this|that|such)\b", sentence, re.IGNORECASE):
+        return True
     # A subject such as "This scalar", "That fermentation" or "It", also after an opening
     # phrase, as in "In the UK, it does not need to involve money"
     if re.match(r"(?:[^,]{1,40},\s*)?(this|that|such|it|its|another|other|he|she|they|their)\b", sentence, re.IGNORECASE):
@@ -691,6 +694,26 @@ LINK_WORDS = {"but", "and", "or", "so", "yet", "however", "additionally", "moreo
               "also", "thus", "therefore", "hence", "equivalently", "similarly", "conversely", "finally",
               "then", "again"}
 
+def drop_unmatched_brackets(text):
+    """Remove a bracket whose pair was cut off.
+
+    "the square of a nonzero [...] is never zero)" is cut from "(it cannot be
+    diagonalizable since ..., and the square of a nonzero [...] is never zero)".
+    """
+    chars = list(text)
+    opened = []
+    for k, ch in enumerate(chars):
+        if ch == "(":
+            opened.append(k)
+        elif ch == ")":
+            if opened:
+                opened.pop()
+            else:
+                chars[k] = ""
+    for k in opened:
+        chars[k] = ""
+    return "".join(chars).strip()
+
 def cut_card(sentence, span, concept, text, max_words=35, context=None):
     """Return the card text if its words are a continuous part of the blanked sentence, else None.
 
@@ -745,7 +768,7 @@ def cut_card(sentence, span, concept, text, max_words=35, context=None):
     # A cut must end with its clause: "vectors that span V" cut to "vectors that span" loses its object
     if source[end:].lstrip()[:1].isalnum() and lowered[i + len(words)] not in CLAUSE_WORDS:
         return None
-    card = source[source_tokens[i].start():end]
+    card = drop_unmatched_brackets(source[source_tokens[i].start():end])
     card = card[0].upper() + card[1:]
     if not card.endswith((".", "!", "?")):
         card += "."
