@@ -10,30 +10,15 @@ import os
 import feedparser
 import subprocess
 import tempfile
-import time
 import json
 import xml.etree.ElementTree as ET
 from collections import Counter
 from contextvars import ContextVar
 
-# Steps of the current generation run, shown in the app when debugging is on.
-# Streamlit runs each user's session in its own thread, and a ContextVar holds a
-# separate value per thread, so two people generating at once never share a log.
-_debug_log = ContextVar("debug_log", default=None)
-
-def new_debug_log():
-    """Start an empty log for this run and return it."""
-    log = []
-    _debug_log.set(log)
-    return log
-
-def debug(step, text):
-    log = _debug_log.get()
-    if log is not None:
-        log.append((step, text))
-
 # Called with a short description of each step as it starts, so the interface can show
-# what a run of a minute or more is doing. Kept per session, like the debug log.
+# what a run of a minute or more is doing. Streamlit runs each user's session in its own
+# thread, and a ContextVar holds a separate value per thread, so two people generating
+# at once never see each other's steps.
 _progress = ContextVar("progress", default=None)
 
 def report(text):
@@ -56,14 +41,12 @@ JUDGING_EFFORT = "low"
 WRITING_EFFORT = "minimal"
 
 def ask_model(client, step, prompt, effort, system=None):
-    """Send one prompt to MODEL and return the reply. The time it took goes to the debug log."""
+    """Send one prompt to MODEL and return the reply. The step is reported to the progress bar."""
     messages = [{"role": "user", "content": prompt}]
     if system:
         messages.insert(0, {"role": "system", "content": system})
     report(step)
-    start = time.monotonic()
     response = client.chat.completions.create(model=MODEL, reasoning_effort=effort, messages=messages)
-    debug("Time", f"{step}: {time.monotonic() - start:.0f} s")
     return response.choices[0].message.content
 
 HEADERS = {
@@ -450,12 +433,8 @@ Text:
     sentences = split_sentences(sample_content(content))
     kept = []
     for c in concepts:
-        if any(answer_matches_concept(c, e) or answer_matches_concept(e, c) for e in exclude or []):
-            debug("Concepts", f"DROPPED (already tried): {c}")
-        elif is_main_topic(c, sentences):
-            debug("Concepts", f"DROPPED (main topic): {c}")
-        elif len(kept) < count:
-            debug("Concepts", f"kept: {c}")
+        already_tried = any(answer_matches_concept(c, e) or answer_matches_concept(e, c) for e in exclude or [])
+        if not already_tried and not is_main_topic(c, sentences) and len(kept) < count:
             kept.append(c)
     return kept
 
@@ -679,8 +658,6 @@ def concept_candidates(concepts, content, max_words=80, per_concept=5):
             found.append((sentence, span, context))
         # Shortest first, counting the context the card will also show
         found.sort(key=lambda f: len(f[0]) + len(f[2] or ""))
-        if not found:
-            debug("Cloze cards", f"no usable source sentence for: {concept}")
         candidates += [(concept, *f) for f in found[:per_concept]]
     return candidates
 
@@ -849,14 +826,12 @@ Candidates:
             if concept in used:
                 continue
             card = cut_card(sentence, span, concept, match.group(2), context=context)
+            # Not word for word, ends mid-phrase, starts by pointing back, too long or too short
             if not card:
-                debug("Cloze cards", f"REJECTED cut (not word for word, ends mid-phrase, starts by pointing back, too long or too short): {match.group(2)}\nsource: {sentence}")
                 rejected.append((number, match.group(2)))
                 continue
             used.add(concept)
-            answer = sentence[span[0]:span[1]]
-            debug("Cloze cards", f"chosen: {card} → {answer}")
-            cards.append((card, answer))
+            cards.append((card, sentence[span[0]:span[1]]))
         return rejected
 
     rejected = ask(prompt, "choosing cloze sentences")
@@ -887,9 +862,6 @@ Cards:
 {retry_list}"""
         ask(retry, "retrying rejected cloze cards")
 
-    for concept in concepts:
-        if concept not in used and any(c[0] == concept for c in candidates):
-            debug("Cloze cards", f"no sentence chosen for: {concept}")
     return cards
 
 def generate_cards(content, api_key, num_cards, difficulty, card_type="Q/A cards", exclude=None, tried_concepts=None):
@@ -925,10 +897,7 @@ Content: {sample_content(content)}"""
     reply = ask_model(client, "writing Q/A cards", prompt, WRITING_EFFORT,
                       system="You are a helpful assistant that creates educational flashcards.")
 
-    cards = parse_cards(reply)
-    for q, a in cards:
-        debug("Q/A cards", f"written: {q} → {a}")
-    return cards
+    return parse_cards(reply)
 
 def parse_cards(text):
     """Parse both Q/A and cloze formats from the model's response."""
@@ -1062,14 +1031,7 @@ Cards:
             if 0 <= index < len(cards):
                 keep.append(cards[index])
 
-    for q, a in cards:
-        if (q, a) not in keep:
-            debug("Review", f"DROPPED by model: {q} → {a}")
-
     if card_type == "Cloze cards":
-        for q, a in keep:
-            if answer_leaks(q, a):
-                debug("Review", f"DROPPED (answer leaks into sentence): {q} → {a}")
         keep = [(q, a) for q, a in keep if not answer_leaks(q, a)]
 
     return keep, len(cards) - len(keep)
@@ -1119,21 +1081,16 @@ def generate_reviewed_cards(content, api_key, num_cards, difficulty, card_type="
         # Q/A cards may share an answer, since they can ask different things about it.
         for q, a in kept:
             if "[...]" in q and any("[...]" in q2 and answer_matches_concept(a, a2) for q2, a2 in cards):
-                debug("Review", f"DROPPED (duplicate answer): {q} → {a}")
                 rejected += 1
                 continue
             # Two cloze cards cut from the same sentence give each other away, since each
             # shows the other's answer: "Al Capone on [...]" and "[...] on tax evasion".
             # A context sentence can't cause this: it never holds its own card's answer.
             if "[...]" in q and any("[...]" in q2 and find_concept(q2, a) and find_concept(q, a2) for q2, a2 in cards):
-                debug("Review", f"DROPPED (same sentence as another card): {q} → {a}")
                 rejected += 1
                 continue
             cards.append((q, a))
 
-    # Q/A generation asks for twice the cards needed, so several usually pass review
-    for q, a in cards[num_cards:]:
-        debug("Review", f"passed but not needed: {q} → {a}")
     return cards[:num_cards], rejected
 
 

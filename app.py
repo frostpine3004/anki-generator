@@ -1,4 +1,3 @@
-import contextvars
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -181,8 +180,6 @@ context = st.slider("Paragraphs to include around each match", 0, 2, 1)
 
 deck_name = st.text_input("Deck name", value="My AI Flashcards")
 
-show_debug = st.checkbox("Show debug info")
-
 if st.button("Generate Flashcards"):
     if not api_key:
         st.error("Please enter your OpenAI API key!")
@@ -226,8 +223,6 @@ if st.button("Generate Flashcards"):
             st.stop()
         st.caption(f"Topic filter kept {matched} of {total} paragraphs")
 
-    debug_log = flashcards.new_debug_log()
-
     # A run takes a minute or more. It runs in a second thread so this one can keep
     # the progress bar moving and show which step is running.
     current = {"step": "starting"}
@@ -236,9 +231,8 @@ if st.button("Generate Flashcards"):
         # Called from the worker thread, which can't draw on the page, so only note the step
         current["step"] = step
 
-    # copy_context hands the worker this session's debug log
     pool = ThreadPoolExecutor(max_workers=1)
-    run = pool.submit(contextvars.copy_context().run, flashcards.generate_reviewed_cards,
+    run = pool.submit(flashcards.generate_reviewed_cards,
                       content, api_key, num_cards, difficulty, card_type, progress=on_progress)
     # Lets the thread end when the run is done, without making this one wait for it
     pool.shutdown(wait=False)
@@ -258,11 +252,6 @@ if st.button("Generate Flashcards"):
 
     if rejected:
         st.caption(f"{rejected} cards rejected in review")
-
-    if show_debug:
-        with st.expander("Debug: what happened at each step"):
-            for step, text in debug_log:
-                st.text(f"[{step}] {text}")
 
     if not cards:
         st.error("No flashcards could be generated. Try a different source.")
