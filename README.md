@@ -2,6 +2,8 @@
 
 Final project for the Building AI course
 
+**Try it:** [anki-generator.streamlit.app](https://anki-generator.streamlit.app). You need your own OpenAI API key.
+
 ## Summary
 
 AI Flashcard Generator turns webpages, PDFs, podcasts, YouTube transcripts and your own notes into Anki flashcards. It writes Q/A and cloze cards with an OpenAI model, has the model review its own cards and drop the weak ones, and exports a ready-to-import `.apkg` deck.
@@ -19,7 +21,7 @@ My own motivation: I use Anki to study technical material and wanted a cheap way
 
 ## How is it used?
 
-Run the Streamlit app, enter your own OpenAI API key and choose a source:
+Open the [app](https://anki-generator.streamlit.app) or run it locally (see Setup below), enter your own OpenAI API key and choose a source:
 
 * **Webpage/Article URL**: the page is fetched and its paragraphs are extracted
 * **YouTube Transcript**: paste the transcript from YouTube's own "Show transcript" view
@@ -94,7 +96,7 @@ Technical limitations:
 * The public app runs on Streamlit Community Cloud's free tier, which has limited memory and computing time. Podcast audio is downloaded to the server before transcription, so a long episode takes several minutes, and heavy use can make the app restart. Transcribing only part of an episode keeps it lighter.
 
 Ethical considerations:
-* Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing, and your API key is used only for your own session, never saved or written to a log. The code is public, so anyone can check this.
+* Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing, and your API key is used only for your own session, never saved or written to a log. The code is public, so anyone can check this. Streamlit Community Cloud, which hosts the public app, adds its own visitor analytics (Google Tag Manager and Segment) to the page around the app. The app can't turn these off; running it locally avoids them.
 * Copyright: cloze cards copy sentences from the source, so a deck made from someone else's article, book or podcast is for personal study, not for sharing or selling.
 * Access: the tool needs a paid OpenAI API key. A run costs around a cent, but not every student can get a key.
 
