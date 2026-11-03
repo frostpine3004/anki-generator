@@ -27,7 +27,15 @@ Run the Streamlit app, enter your own OpenAI API key and choose a source:
 * **PDF Upload**: choose a page range (e.g. `1, 5-8, 27-30`) and preview the extracted text
 * **My Own Notes**: paste any text
 
+<img src="images/app.png" alt="A podcast episode with a published transcript, used for free" width="380"> <img src="images/whisper-cost.png" alt="A podcast episode without a transcript, with the Whisper cost shown before transcribing" width="380">
+
+*Left: an episode with a published transcript, used for free. Right: an episode without one, with the Whisper cost shown before you start.*
+
 Then choose the number of cards, the difficulty, the card type (Q/A, cloze or both) and, optionally, a topic to narrow the source down to. A progress bar shows which step is running. The app shows the generated cards and offers the deck as a download. Import the `.apkg` file into Anki.
+
+<img src="images/cards.png" alt="Five cloze cards generated from a podcast episode about chocolate" width="500">
+
+*Cloze cards from BrainStuff's "How Is Chocolate Made?". Each card is copied word for word from the transcript. Card 2 also shows the sentence before it, because the card's sentence doesn't make sense without it.*
 
 The tool is meant for students and self-learners who already use Anki. It costs only what the OpenAI API charges: around a cent for cards from an article, and about $0.006 per minute of transcribed audio.
 
