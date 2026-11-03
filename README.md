@@ -39,7 +39,7 @@ Then choose the number of cards, the difficulty, the card type (Q/A, cloze or bo
 
 *Cloze cards from BrainStuff's "How Is Chocolate Made?". Each card is copied word for word from the transcript. Card 2 also shows the sentence before it, because the card's sentence doesn't make sense without it.*
 
-The tool is meant for students and self-learners who already use Anki. It costs only what the OpenAI API charges: around a cent for cards from an article, and about $0.006 per minute of transcribed audio.
+The tool is meant for students and self-learners who already use Anki. It costs only what the OpenAI API charges: about 2–3 cents for cards from an article, and about $0.006 per minute of transcribed audio.
 
 ### YouTube design decision
 
@@ -98,7 +98,7 @@ Technical limitations:
 Ethical considerations:
 * Privacy: content is sent to OpenAI's API, so the tool isn't suited for confidential material. The app itself stores nothing, and your API key is used only for your own session, never saved or written to a log. The code is public, so anyone can check this. Streamlit Community Cloud, which hosts the public app, adds its own visitor analytics (Google Tag Manager and Segment) to the page around the app. The app can't turn these off; running it locally avoids them.
 * Copyright: cloze cards copy sentences from the source, so a deck made from someone else's article, book or podcast is for personal study, not for sharing or selling.
-* Access: the tool needs a paid OpenAI API key. A run costs around a cent, but not every student can get a key.
+* Access: the tool needs a paid OpenAI API key. A run costs a few cents, but not every student can get a key.
 
 ## What next?
 

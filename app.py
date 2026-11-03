@@ -307,7 +307,7 @@ with st.expander("Read the case for this tool"):
 
 Most card generators charge monthly or as a one-time purchase whether you use
 them or not. This one asks for your own OpenAI key and adds nothing on top.
-Cards from an article cost around a cent. Transcribing a ten-minute podcast
+Cards from an article cost two or three cents. Transcribing a ten-minute podcast
 costs about six cents.
 
 **You see the price before you press the button**

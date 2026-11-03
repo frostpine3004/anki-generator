@@ -348,9 +348,11 @@ path that I found.
 
 ### Cost
 
-Card generation costs fractions of a cent. Transcription costs 0.006 USD per
-minute, about a hundred times more. A week of active development and testing
-came to under ten cents in total, but that was mostly text.
+Card generation costs two or three cents per run with gpt-5-mini. I measured
+one cloze run: about 24,000 input tokens and 9,000 output tokens. Output costs
+eight times more per token than input, so most of the price is the model's
+answers, not the source text. Transcription costs 0.006 USD per minute, so a
+ten-minute episode costs about as much as two or three card runs.
 
 The button shows an estimate before the call, and the user can pick a start
 point and duration:
