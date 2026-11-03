@@ -9,6 +9,17 @@ import flashcards
 TYPICAL_SECONDS = {"Cloze cards": 30, "Q/A cards": 15, "Both": 45}
 
 
+def show_error(what, error):
+    """Show an error to this user only, and stop.
+
+    Streamlit writes errors the app doesn't catch to the server log, and their messages
+    can contain user data, such as a web address or the end of an API key. Every step
+    that handles user input catches its errors here instead.
+    """
+    st.error(f"{what}: {error}")
+    st.stop()
+
+
 # Streamlit reruns the whole script on every click, so the feed and transcript
 # are cached instead of being downloaded again each time.
 # A failed feed raises, and Streamlit doesn't cache errors, so the next run retries.
@@ -141,7 +152,10 @@ elif input_type == "Podcast RSS Feed":
 elif input_type == "PDF Upload":
     pdf_file = st.file_uploader("Upload a PDF file", type="pdf")
     if pdf_file:
-        total_pages = flashcards.count_pdf_pages(pdf_file)
+        try:
+            total_pages = flashcards.count_pdf_pages(pdf_file)
+        except Exception as e:
+            show_error("Couldn't read this PDF", e)
         page_range = st.text_input(
             f"Pages (1-{total_pages})",
             placeholder="e.g. 1, 5-8, 27-30"
@@ -149,7 +163,10 @@ elif input_type == "PDF Upload":
         st.caption("Counts from the file's first page, which may differ from printed page numbers. Leave empty for the whole document.")
 
         if st.button("Preview extracted text"):
-            pages = flashcards.extract_pdf_pages(pdf_file, page_range)
+            try:
+                pages = flashcards.extract_pdf_pages(pdf_file, page_range)
+            except Exception as e:
+                show_error("Couldn't read these pages", e)
             total_chars = sum(len(text) for _, text in pages)
             st.caption(f"{len(pages)} pages, {total_chars} characters")
 
@@ -190,7 +207,10 @@ if st.button("Generate Flashcards"):
             if not url:
                 st.error("Please enter a URL!")
                 st.stop()
-            content = flashcards.scrape_url(url)
+            try:
+                content = flashcards.scrape_url(url)
+            except Exception as e:
+                show_error("Couldn't fetch this page", e)
 
         elif input_type == "YouTube Transcript":
             if not youtube_transcript:
@@ -208,7 +228,10 @@ if st.button("Generate Flashcards"):
             if not pdf_file:
                 st.error("Please upload a PDF file!")
                 st.stop()
-            content = flashcards.extract_pdf(pdf_file, page_range)
+            try:
+                content = flashcards.extract_pdf(pdf_file, page_range)
+            except Exception as e:
+                show_error("Couldn't read this PDF", e)
 
         elif input_type == "My Own Notes":
             if not own_notes:
@@ -246,9 +269,12 @@ if st.button("Generate Flashcards"):
         step = current["step"]
         bar.progress(share, text=f"{step[0].upper()}{step[1:]}...")
         time.sleep(0.3)
-    bar.progress(1.0, text="Done")
-    cards, rejected = run.result()
     bar.empty()
+    try:
+        cards, rejected = run.result()
+    except Exception as e:
+        # For example a wrong API key, an empty account or a network error
+        show_error("Card generation failed", e)
 
     if rejected:
         st.caption(f"{rejected} cards rejected in review")

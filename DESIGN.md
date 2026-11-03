@@ -72,6 +72,26 @@ tool: it listed every concept, chosen sentence and rejected card with the reason
 which was how most of the filters in this document were found. For someone
 generating cards it was noise.
 
+### Nothing left behind
+
+A check before sharing the app publicly looked for anywhere user data could stay
+on the server. Three places did:
+
+- genanki's `write_to_file` builds the deck in a temporary database and never
+  deletes it, so every deck's cards stayed in the server's temp folder.
+  `build_deck` now does the same steps in a temporary folder that is deleted as
+  soon as the file is ready.
+- Streamlit writes errors the app doesn't catch to the server log. Their messages
+  can hold user data: a failed fetch includes the web address, and OpenAI's
+  wrong-key error includes the end of the key. Every step that handles user
+  input now catches its errors and shows them only to that user.
+- Streamlit sends usage statistics from each browser by default.
+  `.streamlit/config.toml` turns that off.
+
+The podcast feed and transcript caches hold public data, keyed by URL, for ten
+minutes. Whisper transcripts and uploaded PDFs live in the user's own session
+and are gone when it ends.
+
 ---
 
 ## 2. Two-stage cloze generation
@@ -465,7 +485,3 @@ The interface says so rather than trying to detect it.
 **No validation after review.** Cards that pass review are exported as-is.
 Nothing checks that the `.apkg` imports correctly or that the deck contains what
 was asked for.
-
-**Temporary files.** genanki leaves its temporary database in the server's temp
-folder for every deck it builds. Each has a unique name and is never served to
-anyone, but they pile up.

@@ -10,6 +10,10 @@ import os
 import feedparser
 import subprocess
 import tempfile
+import time
+import sqlite3
+import zipfile
+import itertools
 import json
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -55,7 +59,7 @@ HEADERS = {
 
 def scrape_url(url):
     """Fetch a webpage and return its main text, stripped of navigation and scripts."""
-    response = requests.get(url, headers=HEADERS)
+    response = requests.get(url, headers=HEADERS, timeout=30)
     soup = BeautifulSoup(response.text, 'html.parser')
 
     for tag in soup(["script", "style", "nav", "footer", "header"]):
@@ -1113,6 +1117,10 @@ def build_deck(flashcards, deck_name):
 
     The deck is built in memory instead of saved under its name in the app folder:
     two users who kept the default name would overwrite and download each other's file.
+
+    genanki's own write_to_file leaves its temporary database, which holds every card,
+    on the server's disk. So the same steps are done here in a temporary folder that
+    is deleted as soon as the file is ready.
     """
     deck_id = random.randrange(1 << 30, 1 << 31)
     deck = genanki.Deck(deck_id, deck_name)
@@ -1121,5 +1129,14 @@ def build_deck(flashcards, deck_name):
         deck.add_note(genanki.Note(model=CARD_MODEL, fields=[question, answer]))
 
     buffer = io.BytesIO()
-    genanki.Package(deck).write_to_file(buffer)
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "collection.anki2")
+        conn = sqlite3.connect(db_path)
+        timestamp = time.time()
+        genanki.Package(deck).write_to_db(conn.cursor(), timestamp, itertools.count(int(timestamp * 1000)))
+        conn.commit()
+        conn.close()
+        with zipfile.ZipFile(buffer, "w") as apkg:
+            apkg.write(db_path, "collection.anki2")
+            apkg.writestr("media", "{}")
     return buffer.getvalue()
